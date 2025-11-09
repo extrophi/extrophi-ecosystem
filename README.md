@@ -1,316 +1,257 @@
-# BrainDump Voice Processor
+# Clear Voice App
 
-**SuperWhisper Killer** - A 100% local, privacy-first voice-to-markdown transcription system.
+**Privacy-first voice journaling for people under stress.**
 
-## What Is This?
+---
 
-Replace expensive cloud transcription services (€132/year) with free, local, Metal-accelerated speech-to-text processing.
+## What This Is
 
-**Voice input → WAV recording → Whisper C++ transcription → Markdown output**
+A tool for people who need to externalize thoughts during difficult moments. No cloud. No subscriptions. No data collection. Just your voice, your words, your control.
 
-## Why This Matters
+**Built for:**
+- People managing executive function challenges
+- Those under stress with no one to talk to
+- Anyone who needs to organize chaotic thoughts
+- Privacy-conscious individuals
 
-- **Privacy First:** 100% local processing, your voice data never leaves your Mac
-- **Zero Cost:** No subscriptions, no API fees, free forever
-- **Fast:** 436ms to transcribe 11 seconds (25× faster than real-time)
-- **Reliable:** Metal GPU acceleration on M-series chips
-- **User Owned:** You control your data, your workflow, your tools
+**Not built for:**
+- Competition with existing products
+- Maximum features or complexity
+- Cloud-based convenience
+- Monetization
 
-## Features
+---
 
-✅ Keyboard shortcut activation (Ctrl+Y)  
-✅ Real-time voice recording (PyAudio)  
-✅ Whisper C++ transcription (Metal GPU)  
-✅ Markdown formatted output  
-✅ Automatic file organization  
-✅ Zero external dependencies  
+## The Journey
 
-## Requirements
+This project started as an Electron experiment (IAC-30), pivoted through Python implementations, and landed on a C++ core with Rust UI. Each pivot taught us something. Each failure made the next attempt better.
 
-- macOS (tested on M2 MacBook Air)
-- Homebrew installed
-- Python 3.12+
-- Node.js 18+
+**The breadcrumb trail matters as much as the destination.**
 
-## Quick Start
+---
 
-### 1. Install System Dependencies
+## Current State: Stage A
 
-```bash
-# Whisper C++ (transcription engine)
-brew install whisper-cpp
+**Status:** ✅ Proven, working C++ Whisper core
 
-# PortAudio (audio library)
-brew install portaudio
+**What works:**
+- Voice recording via CLI
+- Whisper C++ transcription (Metal GPU acceleration)
+- 16kHz audio processing
+- Markdown output
 
-# UV (Python package manager)
-brew install uv
+**Architecture:**
+```
+Audio Input → C++ Core → Whisper.cpp → Transcript
 ```
 
-### 2. Clone & Setup
+**Why C++:** 
+- Direct Metal GPU access
+- No Python subprocess complexity
+- Small binary size
+- Proven reliability
+
+---
+
+## Coming Next: Stage B
+
+**Status:** 🚧 In development
+
+**Adding:**
+- Rust/Tauri desktop UI
+- Visual feedback during recording
+- Clean, minimal interface
+- One-click operation
+
+**Why Rust + Tauri:**
+- Small bundle size (vs Electron bloat)
+- Native performance
+- Cross-platform foundation
+- Privacy-first by design
+
+---
+
+## Philosophy
+
+### Privacy First
+
+100% local processing. Your voice never leaves your machine. No analytics, no telemetry, no "improving our services."
+
+### User Control
+
+You own your data. You control what gets processed. You decide what stays private.
+
+### Simple By Design
+
+One purpose: externalize thoughts quickly during difficult moments. Everything else is distraction.
+
+### Open & Honest
+
+Open source. Documented decisions. Clear reasoning. Breadcrumbs for others to follow.
+
+---
+
+## Technical Foundation (Stage A)
+
+### Requirements
+
+- macOS (Apple Silicon recommended)
+- Homebrew
+- Whisper C++ with Metal support
+- PortAudio
+
+### Installation
 
 ```bash
-git clone https://github.com/IAMCODIO/IAC-30-brain-dump-voice-processor.git
-cd IAC-30-brain-dump-voice-processor
+# Install dependencies
+brew install whisper-cpp portaudio
 
-# Python dependencies
-uv venv
-source .venv/bin/activate
-uv pip install pyaudio
+# Clone repository
+git clone https://github.com/Iamcodio/IAC-031-clear-voice-app.git
+cd IAC-031-clear-voice-app
 
-# Node dependencies
-npm install
-```
-
-### 3. Download Whisper Model
-
-```bash
-# Create models directory
+# Download Whisper model (141MB)
 mkdir -p models
-
-# Download base model (English)
 curl -L -o models/ggml-base.bin \
   https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin
 ```
 
-### 4. Run
+### Usage (CLI)
 
 ```bash
-npm start
+# Record and transcribe
+./braindump-cli run
+
+# Test installation
+./braindump-cli test
 ```
 
-Press **Ctrl+Y** to start/stop recording. Transcripts saved to `outputs/transcripts/`.
-
-## Configuration
-
-The application uses environment-based configuration via the `config` package. Configuration is loaded from JSON files in the `config/` directory.
-
-### Configuration Files
-
-- **`config/default.json`** - Base configuration (all environments)
-- **`config/development.json`** - Development environment overrides
-- **`config/production.json`** - Production environment overrides
-- **`config/test.json`** - Test environment overrides
-- **`config/custom-environment-variables.json`** - Environment variable mappings
-
-### Environment Variables
-
-You can override configuration values using environment variables:
-
-- **`NODE_ENV`** - Environment (development, production, test) - Default: development
-- **`LOG_LEVEL`** - Log level (debug, info, warn, error, silent) - Overrides logging.level
-- **`SENTRY_DSN`** - Sentry error tracking DSN (optional) - See Error Tracking section below
-- **`SENTRY_ENABLED`** - Enable Sentry (true/false) - Default: false
-
-### Running in Different Environments
-
-```bash
-# Development (default) - debug logging, metrics disabled
-npm start
-
-# Production - warn logging, production paths, Sentry enabled
-NODE_ENV=production npm start
-
-# Test - silent logging, test paths
-NODE_ENV=test npm start
-
-# Custom log level
-LOG_LEVEL=debug npm start
-```
-
-### Key Configuration Values
-
-```javascript
-// Paths
-paths.audioDir              // outputs/audio (dev) | /var/app/braindump/audio (prod)
-paths.transcriptDir         // outputs/transcripts (dev) | /var/app/braindump/transcripts (prod)
-paths.databaseFile          // src/data/recordings.json (dev) | /var/app/braindump/db/recordings.json (prod)
-
-// Recording
-recording.sampleRate        // 44100
-recording.channels          // 1
-recording.format            // WAV
-recording.bitDepth          // 16
-
-// Shortcuts
-shortcuts.toggleRecording   // Control+Y
-
-// Window
-window.width                // 800
-window.height               // 600
-
-// Logging
-logging.level               // info (default) | debug (dev) | warn (prod) | silent (test)
-```
-
-## Error Tracking (Optional)
-
-BrainDump supports optional error tracking via Sentry for production deployments.
-
-### Why Sentry?
-
-- **Zero errors lost in production** - Track all uncaught exceptions and promise rejections
-- **Full context** - Error breadcrumbs show user actions leading to errors
-- **Privacy-first** - Sensitive data automatically sanitized before sending
-- **Optional** - Disabled by default for local development
-
-### Setup Sentry (Optional)
-
-1. **Create a Sentry project** at https://sentry.io (free tier available)
-2. **Copy your DSN** from Project Settings → Client Keys (DSN)
-3. **Set environment variables:**
-
-```bash
-export SENTRY_ENABLED=true
-export SENTRY_DSN=https://your-key@sentry.io/project-id
-npm start
-```
-
-### Privacy Safeguards
-
-Sentry integration includes automatic data sanitization:
-
-- **File paths sanitized** - User names removed (`/Users/john/` → `/Users/REDACTED/`)
-- **No sensitive headers** - Cookies and authorization headers stripped
-- **No request data** - Only error messages and stack traces sent
-- **Breadcrumbs filtered** - User actions tracked without sensitive data
-
-### Example: Capturing Errors
-
-```javascript
-const { captureError } = require('./src/js/error_handler');
-
-try {
-  // Your code
-} catch (error) {
-  captureError(error, {
-    tags: { component: 'transcription' },
-    extra: { audioPath: '/path/to/file.wav', fileSize: 12345 },
-    level: 'error'
-  });
-}
-```
-
-### Disable Sentry
-
-Sentry is **disabled by default** for local development. To explicitly disable:
-
-```bash
-export SENTRY_ENABLED=false
-# or simply don't set it (defaults to false)
-npm start
-```
-
-## Architecture
-
-```
-User Input (Ctrl+Y)
-    ↓
-Electron App (main.js)
-    ↓
-Python Recorder (recorder.py) → WAV file
-    ↓
-Whisper C++ (transcribe.py) → Raw text
-    ↓
-Markdown Formatter → Clean output
-    ↓
-outputs/transcripts/transcript_TIMESTAMP.md
-```
+---
 
 ## Project Structure
 
 ```
-├── main.js              # Electron main process
-├── recorder.py          # PyAudio voice recorder
-├── transcribe.py        # Whisper CLI wrapper
-├── index.html           # UI
-├── models/              # Whisper models (.bin files)
-├── outputs/
-│   ├── audio/          # Recorded WAV files
-│   └── transcripts/    # Generated markdown
-├── docs/
-│   └── ARCHITECTURE_V2.md  # Detailed system design
-└── src/
-    └── python/         # Python modules
+├── README.md                    # You are here
+├── DESIGN-PROPOSAL-V3.0-STAGE-A.md  # Detailed architecture
+├── PRD-v3.0-STAGE-A.md         # Product requirements
+├── CHANGELOG.md                # Version history
+└── models/                     # Whisper models (not in git)
+    └── ggml-base.bin          # Download separately
 ```
+
+---
 
 ## Performance
 
-| Metric | Value | Notes |
-|--------|-------|-------|
-| Transcription Speed | 436ms / 11s | 25× faster than real-time |
-| Recording Latency | <100ms | Near-instant start |
-| CPU Usage | <2% | During recording |
-| GPU Usage | ~30% | Metal acceleration |
-| Cost | €0 | Forever |
+| Metric | Value |
+|--------|-------|
+| Transcription Speed | <1s per 10s audio |
+| Startup Time | <500ms |
+| Memory Usage | <50MB |
+| GPU Acceleration | Metal (M-series) |
+| Cost | €0 forever |
 
-## Comparison
+---
 
-| Product | Cost/Year | Speed | Privacy | Offline |
-|---------|-----------|-------|---------|---------|
-| **BrainDump** | **€0** | **436ms** | **100% Local** | **✅ Yes** |
-| SuperWhisper | €132 | Unknown | Cloud-based | ❌ No |
-| Otter.ai | €120+ | Variable | Cloud-based | ❌ No |
+## The Pivot Story
 
-## Documentation
+### Why Not Electron?
 
-- [ARCHITECTURE_V2.md](docs/ARCHITECTURE_V2.md) - Complete system design
-- [BRAINDUMP-PRD-v2.md](BRAINDUMP-PRD-v2.md) - Product requirements
-- [whisper-cli-help.txt](docs/whisper-cli-help.txt) - Whisper C++ reference
+- Bundle size: 140MB (vs Tauri's 10MB)
+- Complex setup: Python subprocesses, node modules
+- Maintenance burden: Three languages, multiple runtimes
 
-## Roadmap
+### Why Not Python-Only?
 
-**Phase 1 (MVP) - ✅ Complete**
-- Voice recording with keyboard shortcut
-- Whisper C++ transcription
-- Markdown output generation
+- Subprocess complexity
+- Distribution challenges
+- Performance overhead
+- GUI framework limitations
 
-**Phase 2 (Optional)**
-- LLM cleanup integration (Ollama/OpenRouter)
-- Settings panel for customization
-- .app bundle packaging
+### Why C++ + Rust?
 
-**Phase 3 (Future)**
-- Advanced RAG processing
-- Multi-language support
-- Windows/Linux ports
+- **C++ Core:** Direct Whisper integration, Metal GPU access
+- **Rust UI:** Small binaries, memory safety, Tauri framework
+- **Clean separation:** Core engine (C++) + Interface (Rust)
+- **Proven path:** Stage A works, Stage B builds on solid foundation
 
-## Known Limitations
+---
 
-- macOS only (M-series chips recommended)
-- English language optimized
-- Requires local setup (not instant)
-- No real-time waveform visualization yet
+## Mission
 
-## Philosophy
+This tool exists because sometimes people need to get thoughts out of their head and onto paper (or screen). No judgment. No features. No bullshit.
 
-This is not just a transcription tool. This is about:
-- **Privacy:** Your thoughts, your data, your control
-- **Ownership:** No vendor lock-in, no subscriptions
-- **Freedom:** Build tools that work for you, not against you
+**For people who:**
+- Can't organize thoughts under stress
+- Have no one safe to talk to
+- Need privacy above everything else
+- Don't trust cloud services with their voice
 
-One-to-many scales. Services don't.
+**Built by someone who:** Was homeless. Got help. Paying it forward.
+
+---
+
+## Non-Goals
+
+❌ Competing with existing products  
+❌ Venture funding or growth metrics  
+❌ Feature bloat or complexity  
+❌ Cloud sync or team features  
+❌ Recognition or credit  
+
+**Just:** A working tool for people who need it.
+
+---
+
+## Development Principles
+
+**Document as you build:** Future maintainers (including yourself) need context, not just code.
+
+**Test each stage:** Stage A proven before Stage B starts. No building on shaky foundations.
+
+**Embrace pivots:** Wrong paths teach more than right ones. Document both.
+
+**Privacy is non-negotiable:** If it requires cloud, it doesn't ship.
+
+---
 
 ## Credits
 
-**Built by:** Codio (IAMCODIO)  
+**Built by:** Anonymous developer (pseudonym: Codio)  
 **AI Pair Programmer:** Claude Sonnet 4.5 (Anthropic)  
-**Development Time:** ~6 hours  
-**Built in:** Dublin, Ireland  
-**Date:** October 2025  
+**Location:** Dublin, Ireland  
+**Motivation:** Debt of gratitude to people who help others in crisis  
+
+---
 
 ## License
 
 MIT License - Use freely, modify freely, share freely.
 
-## Support
-
-Questions? Open an issue. Want to contribute? PRs welcome.
-
-Built with care. Shipped with pride. Documented for the future.
+No restrictions. No attribution required. Just build good things.
 
 ---
 
-**"The best products solve your own problems. The best documentation teaches while you build."**
+## Support
 
-🚀 First baby delivered. Many more to come.
+Questions? Open an issue.  
+Want to contribute? PRs welcome.  
+Need help? Reach out.
+
+**We're all struggling with something. Tools should help, not hinder.**
+
+---
+
+## Next Steps
+
+1. ✅ Stage A: C++ core complete
+2. 🚧 Stage B: Rust UI in progress
+3. 📋 Stage C: Privacy-aware editing (planned)
+
+Follow the breadcrumbs. The journey continues.
+
+---
+
+*"The best products solve your own problems. The best documentation teaches while you build."*
+
+Built with care. Shipped with purpose. Documented for the future.
