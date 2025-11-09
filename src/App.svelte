@@ -17,6 +17,70 @@
   let modelMessage = $state('Initializing Whisper model...');
   let unlisten = $state(null);
 
+  // Error handling utilities
+  function handleError(error) {
+    console.error('Command error:', error);
+
+    // Handle legacy string errors (backward compatibility)
+    if (typeof error === 'string') {
+      return error;
+    }
+
+    // Handle new structured error format
+    if (error.type && error.data !== undefined) {
+      return getHumanReadableError(error);
+    }
+
+    // Fallback for unknown formats
+    return error.message || JSON.stringify(error);
+  }
+
+  function getHumanReadableError(error) {
+    // Map backend errors to user-friendly messages
+    const errorMap = {
+      'Audio': {
+        'PermissionDenied': 'Microphone access denied. Please check System Settings → Privacy & Security → Microphone.',
+        'NoDeviceFound': 'No microphone found. Please connect a microphone and try again.',
+        'AlreadyRecording': 'Already recording. Please stop the current recording first.',
+        'NotRecording': 'Not currently recording.',
+        'BufferOverflow': 'Audio buffer overflow. Try reducing system load and try again.',
+        'StreamDisconnected': 'Microphone disconnected. Please reconnect your microphone.'
+      },
+      'Transcription': {
+        'ModelNotReady': 'AI model is still loading. Please wait a moment...',
+        'BlankAudio': 'No speech detected. Please speak clearly and try again.',
+        'Timeout': 'Transcription took too long. Please try a shorter recording.',
+        'MetalGPUFailed': 'GPU acceleration failed, using CPU instead (may be slower).'
+      },
+      'Database': {
+        'Locked': 'Database is busy. Please close other BrainDump windows and try again.',
+        'InsufficientDiskSpace': 'Not enough disk space. Please free up at least 100MB.',
+        'Corrupted': 'Database corrupted. Please contact support for recovery.'
+      }
+    };
+
+    const category = errorMap[error.type];
+
+    // Direct match (simple enums like PermissionDenied)
+    if (category && category[error.data]) {
+      return category[error.data];
+    }
+
+    // Handle errors with string data (like RecordingFailed("message"))
+    if (typeof error.data === 'string') {
+      return `${error.type} error: ${error.data}`;
+    }
+
+    // Handle complex error data objects
+    if (error.data && typeof error.data === 'object') {
+      const key = Object.keys(error.data)[0];
+      const value = error.data[key];
+      return `${error.type} error: ${value}`;
+    }
+
+    return `${error.type} error occurred`;
+  }
+
   async function handleRecord() {
     console.log('🔵 BUTTON CLICKED! isRecording:', isRecording, 'modelStatus:', modelStatus);
 
@@ -40,7 +104,8 @@
         startRecordingTimer();
       } catch (error) {
         console.error('❌ Start recording error:', error);
-        status = `Error: ${error}`;
+        const errorMessage = handleError(error);
+        status = `Error: ${errorMessage}`;
         isRecording = false;
       }
     } else {
@@ -67,7 +132,8 @@
         console.error('Error message:', error?.message);
         console.error('Full error:', error);
         console.error('Timestamp:', new Date().toISOString());
-        status = `Error: ${error}`;
+        const errorMessage = handleError(error);
+        status = `Error: ${errorMessage}`;
         isRecording = false;
       }
     }
@@ -97,7 +163,8 @@
       const items = await invoke('get_transcripts', { limit: 10 });
       historyItems = items;
     } catch (error) {
-      console.error('Failed to load history:', error);
+      const errorMessage = handleError(error);
+      console.error('Failed to load history:', errorMessage);
     }
   }
 
@@ -106,7 +173,8 @@
       try {
         peakLevel = await invoke('get_peak_level');
       } catch (error) {
-        console.error('Failed to get peak level:', error);
+        const errorMessage = handleError(error);
+        console.error('Failed to get peak level:', errorMessage);
       }
     }, 100);
   }
@@ -136,7 +204,8 @@
         status = 'Ready';
       }
     } catch (error) {
-      console.error('Failed to check model status:', error);
+      const errorMessage = handleError(error);
+      console.error('Failed to check model status:', errorMessage);
     }
 
     loadHistory();

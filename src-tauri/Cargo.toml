@@ -6,7 +6,7 @@ authors = ["IamCodio"]
 edition = "2021"
 
 [dependencies]
-tauri = { version = "2.1", features = [] }
+tauri = { version = "2.9", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 cpal = "0.15"
@@ -22,12 +22,13 @@ hf-hub = "0.3"
 tokenizers = "0.20"
 parking_lot = "0.12"
 rubato = "0.15"
+tokio = { version = "1.43", features = ["full"] }
 
 [build-dependencies]
-tauri-build = { version = "2.1", features = [] }
+tauri-build = { version = "2.5", features = [] }
 
 [dev-dependencies]
-tokio = { version = "1.0", features = ["full"] }
+tokio = { version = "1.43", features = ["full"] }
 
 [lib]
 name = "braindump"

@@ -28,15 +28,21 @@ fn main() {
     braindump::logging::info("Startup", &format!("Executable path: {:?}", std::env::current_exe()));
     
     let db_path = dirs::home_dir()
-    .expect("Could not find home directory")
-    .join(".braindump")
-    .join("data")
-    .join("braindump.db");
+        .unwrap_or_else(|| {
+            eprintln!("No home directory found, using current directory");
+            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+        })
+        .join(".braindump")
+        .join("data")
+        .join("braindump.db");
 
-// Ensure directory exists
-if let Some(parent) = db_path.parent() {
-    std::fs::create_dir_all(parent).expect("Failed to create data directory");
-}
+    // Ensure directory exists
+    if let Some(parent) = db_path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            eprintln!("Failed to create data directory: {}", e);
+            // Continue - might work later
+        }
+    }
     braindump::logging::info("Database", &format!("Opening database at: {}", db_path.display()));
 
     let conn = match db::initialize_db(db_path.clone()) {
@@ -60,18 +66,23 @@ if let Some(parent) = db_path.parent() {
     let model_path = if cfg!(debug_assertions) {
         // Development mode: use project root
         std::env::current_dir()
-            .unwrap()
+            .unwrap_or_else(|_| {
+                eprintln!("Could not determine current directory, using default");
+                std::path::PathBuf::from(".")
+            })
             .join("models/ggml-base.bin")
     } else {
         // Production mode: bundled in app resources
         // In macOS .app bundle, resources are in Contents/Resources/
         std::env::current_exe()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("Resources/models/ggml-base.bin")
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+            .map(|p| p.join("Resources/models/ggml-base.bin"))
+            .unwrap_or_else(|| {
+                eprintln!("Could not determine model path, using default");
+                std::path::PathBuf::from("models/ggml-base.bin")
+            })
     };
 
     braindump::logging::info("Model", &format!("Model path: {}", model_path.display()));
@@ -268,9 +279,13 @@ if let Some(parent) = db_path.parent() {
             commands::get_transcripts,
             commands::get_peak_level,
             commands::is_model_loaded,
+            commands::test_error_serialization,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .unwrap_or_else(|e| {
+            braindump::logging::critical("Tauri", &format!("Failed to run application: {}", e));
+            eprintln!("Error while running Tauri application: {}", e);
+        });
     
     braindump::logging::info("Shutdown", "Application exiting");
 }

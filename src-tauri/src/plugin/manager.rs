@@ -157,14 +157,15 @@ impl PluginManager {
     ///
     /// Returns a vector of `PluginInfo` containing details about each plugin.
     pub fn list_plugins(&self) -> Vec<PluginInfo> {
-        self.plugins.iter().map(|(name, plugin)| {
-            let plugin_guard = plugin.lock().unwrap();
-            PluginInfo {
+        self.plugins.iter().filter_map(|(name, plugin)| {
+            // Recover from poisoned mutex by extracting the inner data
+            let plugin_guard = plugin.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            Some(PluginInfo {
                 name: name.clone(),
                 version: plugin_guard.version().to_string(),
                 is_active: self.active_plugin.as_ref() == Some(name),
                 is_initialized: plugin_guard.is_initialized(),
-            }
+            })
         }).collect()
     }
 
@@ -193,7 +194,8 @@ impl PluginManager {
     /// ```
     pub fn transcribe(&self, audio: &AudioData) -> PluginResult<Transcript> {
         let plugin = self.get_active()?;
-        let plugin_guard = plugin.lock().unwrap();
+        // Recover from poisoned mutex by extracting the inner data
+        let plugin_guard = plugin.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         plugin_guard.transcribe(audio)
     }
 
@@ -213,7 +215,8 @@ impl PluginManager {
     /// A vector of tuples containing (plugin_name, Result) for each plugin.
     pub fn initialize_all(&self) -> Vec<(String, PluginResult<()>)> {
         self.plugins.iter().map(|(name, plugin)| {
-            let mut plugin_guard = plugin.lock().unwrap();
+            // Recover from poisoned mutex by extracting the inner data
+            let mut plugin_guard = plugin.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             let result = plugin_guard.initialize();
             (name.clone(), result)
         }).collect()
@@ -228,7 +231,8 @@ impl PluginManager {
     /// A vector of tuples containing (plugin_name, Result) for each plugin.
     pub fn shutdown_all(&self) -> Vec<(String, PluginResult<()>)> {
         self.plugins.iter().map(|(name, plugin)| {
-            let mut plugin_guard = plugin.lock().unwrap();
+            // Recover from poisoned mutex by extracting the inner data
+            let mut plugin_guard = plugin.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             let result = plugin_guard.shutdown();
             (name.clone(), result)
         }).collect()
@@ -318,7 +322,7 @@ mod tests {
         let mut manager = PluginManager::new();
         let plugin = Box::new(MockPlugin::new("test"));
 
-        manager.register(plugin).unwrap();
+        manager.register(plugin).expect("Failed to register plugin");
 
         assert_eq!(manager.plugin_count(), 1);
         assert!(manager.has_plugin("test"));
@@ -329,7 +333,7 @@ mod tests {
     fn test_register_duplicate_plugin() {
         let mut manager = PluginManager::new();
 
-        manager.register(Box::new(MockPlugin::new("test"))).unwrap();
+        manager.register(Box::new(MockPlugin::new("test"))).expect("Failed to register first plugin");
         let result = manager.register(Box::new(MockPlugin::new("test")));
 
         assert!(matches!(result, Err(PluginError::InitializationFailed(_))));
@@ -339,9 +343,9 @@ mod tests {
     fn test_register_multiple_plugins() {
         let mut manager = PluginManager::new();
 
-        manager.register(Box::new(MockPlugin::new("plugin1"))).unwrap();
-        manager.register(Box::new(MockPlugin::new("plugin2"))).unwrap();
-        manager.register(Box::new(MockPlugin::new("plugin3"))).unwrap();
+        manager.register(Box::new(MockPlugin::new("plugin1"))).expect("Failed to register plugin1");
+        manager.register(Box::new(MockPlugin::new("plugin2"))).expect("Failed to register plugin2");
+        manager.register(Box::new(MockPlugin::new("plugin3"))).expect("Failed to register plugin3");
 
         assert_eq!(manager.plugin_count(), 3);
         // First plugin should be active
@@ -352,19 +356,19 @@ mod tests {
     fn test_switch_plugin() {
         let mut manager = PluginManager::new();
 
-        manager.register(Box::new(MockPlugin::new("plugin1"))).unwrap();
-        manager.register(Box::new(MockPlugin::new("plugin2"))).unwrap();
+        manager.register(Box::new(MockPlugin::new("plugin1"))).expect("Failed to register plugin1");
+        manager.register(Box::new(MockPlugin::new("plugin2"))).expect("Failed to register plugin2");
 
         assert_eq!(manager.active_plugin_name(), Some("plugin1"));
 
-        manager.switch_plugin("plugin2").unwrap();
+        manager.switch_plugin("plugin2").expect("Failed to switch plugin");
         assert_eq!(manager.active_plugin_name(), Some("plugin2"));
     }
 
     #[test]
     fn test_switch_to_nonexistent_plugin() {
         let mut manager = PluginManager::new();
-        manager.register(Box::new(MockPlugin::new("plugin1"))).unwrap();
+        manager.register(Box::new(MockPlugin::new("plugin1"))).expect("Failed to register plugin");
 
         let result = manager.switch_plugin("nonexistent");
         assert!(matches!(result, Err(PluginError::NotFound(_))));
@@ -373,10 +377,10 @@ mod tests {
     #[test]
     fn test_get_active_plugin() {
         let mut manager = PluginManager::new();
-        manager.register(Box::new(MockPlugin::new("test"))).unwrap();
+        manager.register(Box::new(MockPlugin::new("test"))).expect("Failed to register plugin");
 
-        let plugin = manager.get_active().unwrap();
-        let plugin_guard = plugin.lock().unwrap();
+        let plugin = manager.get_active().expect("Failed to get active plugin");
+        let plugin_guard = plugin.lock().expect("Failed to lock plugin mutex");
 
         assert_eq!(plugin_guard.name(), "test");
     }
@@ -392,11 +396,11 @@ mod tests {
     #[test]
     fn test_get_plugin_by_name() {
         let mut manager = PluginManager::new();
-        manager.register(Box::new(MockPlugin::new("plugin1"))).unwrap();
-        manager.register(Box::new(MockPlugin::new("plugin2"))).unwrap();
+        manager.register(Box::new(MockPlugin::new("plugin1"))).expect("Failed to register plugin1");
+        manager.register(Box::new(MockPlugin::new("plugin2"))).expect("Failed to register plugin2");
 
-        let plugin = manager.get_plugin("plugin2").unwrap();
-        let plugin_guard = plugin.lock().unwrap();
+        let plugin = manager.get_plugin("plugin2").expect("Failed to get plugin by name");
+        let plugin_guard = plugin.lock().expect("Failed to lock plugin mutex");
 
         assert_eq!(plugin_guard.name(), "plugin2");
     }
@@ -404,8 +408,8 @@ mod tests {
     #[test]
     fn test_list_plugins() {
         let mut manager = PluginManager::new();
-        manager.register(Box::new(MockPlugin::new("plugin1"))).unwrap();
-        manager.register(Box::new(MockPlugin::new("plugin2"))).unwrap();
+        manager.register(Box::new(MockPlugin::new("plugin1"))).expect("Failed to register plugin1");
+        manager.register(Box::new(MockPlugin::new("plugin2"))).expect("Failed to register plugin2");
 
         let plugins = manager.list_plugins();
         assert_eq!(plugins.len(), 2);
@@ -418,11 +422,11 @@ mod tests {
     #[test]
     fn test_transcribe_with_active_plugin() {
         let mut manager = PluginManager::new();
-        manager.register(Box::new(MockPlugin::new("test"))).unwrap();
+        manager.register(Box::new(MockPlugin::new("test"))).expect("Failed to register plugin");
 
         // Initialize the plugin
-        let plugin = manager.get_active().unwrap();
-        plugin.lock().unwrap().initialize().unwrap();
+        let plugin = manager.get_active().expect("Failed to get active plugin");
+        plugin.lock().expect("Failed to lock plugin mutex").initialize().expect("Failed to initialize plugin");
 
         let audio = AudioData {
             samples: vec![0.0; 100],
@@ -430,15 +434,15 @@ mod tests {
             channels: 1,
         };
 
-        let transcript = manager.transcribe(&audio).unwrap();
+        let transcript = manager.transcribe(&audio).expect("Failed to transcribe audio");
         assert!(transcript.text.contains("Mock from test"));
     }
 
     #[test]
     fn test_initialize_all() {
         let mut manager = PluginManager::new();
-        manager.register(Box::new(MockPlugin::new("plugin1"))).unwrap();
-        manager.register(Box::new(MockPlugin::new("plugin2"))).unwrap();
+        manager.register(Box::new(MockPlugin::new("plugin1"))).expect("Failed to register plugin1");
+        manager.register(Box::new(MockPlugin::new("plugin2"))).expect("Failed to register plugin2");
 
         let results = manager.initialize_all();
         assert_eq!(results.len(), 2);
@@ -458,8 +462,8 @@ mod tests {
     #[test]
     fn test_shutdown_all() {
         let mut manager = PluginManager::new();
-        manager.register(Box::new(MockPlugin::new("plugin1"))).unwrap();
-        manager.register(Box::new(MockPlugin::new("plugin2"))).unwrap();
+        manager.register(Box::new(MockPlugin::new("plugin1"))).expect("Failed to register plugin1");
+        manager.register(Box::new(MockPlugin::new("plugin2"))).expect("Failed to register plugin2");
 
         // Initialize first
         manager.initialize_all();
@@ -483,7 +487,7 @@ mod tests {
     #[test]
     fn test_has_plugin() {
         let mut manager = PluginManager::new();
-        manager.register(Box::new(MockPlugin::new("test"))).unwrap();
+        manager.register(Box::new(MockPlugin::new("test"))).expect("Failed to register plugin");
 
         assert!(manager.has_plugin("test"));
         assert!(!manager.has_plugin("nonexistent"));
@@ -492,7 +496,7 @@ mod tests {
     #[test]
     fn test_plugin_info_structure() {
         let mut manager = PluginManager::new();
-        manager.register(Box::new(MockPlugin::new("test"))).unwrap();
+        manager.register(Box::new(MockPlugin::new("test"))).expect("Failed to register plugin");
 
         let plugins = manager.list_plugins();
         assert_eq!(plugins.len(), 1);
@@ -510,11 +514,11 @@ mod tests {
         use std::thread;
 
         let mut manager = PluginManager::new();
-        manager.register(Box::new(MockPlugin::new("test"))).unwrap();
+        manager.register(Box::new(MockPlugin::new("test"))).expect("Failed to register plugin");
 
         // Initialize plugin
-        let plugin = manager.get_active().unwrap();
-        plugin.lock().unwrap().initialize().unwrap();
+        let plugin = manager.get_active().expect("Failed to get active plugin");
+        plugin.lock().expect("Failed to lock plugin mutex").initialize().expect("Failed to initialize plugin");
 
         let manager = Arc::new(manager);
         let mut handles = vec![];
@@ -535,7 +539,7 @@ mod tests {
 
         // Wait for all threads
         for handle in handles {
-            let result = handle.join().unwrap();
+            let result = handle.join().expect("Thread panicked");
             assert!(result.is_ok());
         }
     }

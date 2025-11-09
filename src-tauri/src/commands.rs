@@ -1,13 +1,16 @@
 //! Tauri IPC command handlers
 
-use braindump::{AppState, WavWriter, AudioData, Recording, Transcript, AudioCommand, AudioResponse};
+use braindump::{
+    AppState, WavWriter, AudioData, Recording, Transcript, AudioCommand, AudioResponse,
+    BrainDumpError, AudioError, DatabaseError, TranscriptionError,
+};
 use tauri::State;
 use std::time::Instant;
 use std::sync::mpsc;
 use rubato::{SincFixedIn, Resampler};
 
 /// Resample audio from source sample rate to 16kHz for Whisper
-fn resample_to_16khz(samples: &[f32], source_rate: u32) -> Result<Vec<f32>, String> {
+fn resample_to_16khz(samples: &[f32], source_rate: u32) -> Result<Vec<f32>, BrainDumpError> {
     if source_rate == 16000 {
         return Ok(samples.to_vec());
     }
@@ -28,11 +31,11 @@ fn resample_to_16khz(samples: &[f32], source_rate: u32) -> Result<Vec<f32>, Stri
         params,
         samples.len(),
         1,
-    ).map_err(|e| format!("Failed to create resampler: {}", e))?;
+    ).map_err(|_e| BrainDumpError::Transcription(TranscriptionError::InvalidAudioData))?;
 
     let waves_in = vec![samples.to_vec()];
     let mut waves_out = resampler.process(&waves_in, None)
-        .map_err(|e| format!("Resampling failed: {}", e))?;
+        .map_err(|_e| BrainDumpError::Transcription(TranscriptionError::InvalidAudioData))?;
 
     braindump::logging::info("Resampling", &format!("Resampled {} samples to {} samples", samples.len(), waves_out[0].len()));
 
@@ -40,31 +43,31 @@ fn resample_to_16khz(samples: &[f32], source_rate: u32) -> Result<Vec<f32>, Stri
 }
 
 #[tauri::command]
-pub async fn start_recording(state: State<'_, AppState>) -> Result<String, String> {
+pub async fn start_recording(state: State<'_, AppState>) -> Result<String, BrainDumpError> {
     let (response_tx, response_rx) = mpsc::channel();
 
     state.audio_tx.send((AudioCommand::StartRecording, response_tx))
-        .map_err(|e| format!("Failed to send command: {}", e))?;
+        .map_err(|e| BrainDumpError::Audio(AudioError::DeviceInitFailed(e.to_string())))?;
 
-    match response_rx.recv().map_err(|e| format!("Failed to receive response: {}", e))? {
+    match response_rx.recv().map_err(|e| BrainDumpError::Audio(AudioError::DeviceInitFailed(e.to_string())))? {
         AudioResponse::RecordingStarted => Ok("Recording started".to_string()),
-        AudioResponse::Error(e) => Err(e),
-        _ => Err("Unexpected response".to_string()),
+        AudioResponse::Error(e) => Err(BrainDumpError::Audio(AudioError::RecordingFailed(e))),
+        _ => Err(BrainDumpError::Other("Unexpected response".to_string())),
     }
 }
 
 #[tauri::command]
-pub async fn stop_recording(state: State<'_, AppState>) -> Result<String, String> {
+pub async fn stop_recording(state: State<'_, AppState>) -> Result<String, BrainDumpError> {
     // Stop recording via audio thread
     let (response_tx, response_rx) = mpsc::channel();
 
     state.audio_tx.send((AudioCommand::StopRecording, response_tx))
-        .map_err(|e| format!("Failed to send command: {}", e))?;
+        .map_err(|e| BrainDumpError::Audio(AudioError::DeviceInitFailed(e.to_string())))?;
 
-    let (samples, sample_rate) = match response_rx.recv().map_err(|e| format!("Failed to receive response: {}", e))? {
+    let (samples, sample_rate) = match response_rx.recv().map_err(|e| BrainDumpError::Audio(AudioError::DeviceInitFailed(e.to_string())))? {
         AudioResponse::RecordingStopped { samples, sample_rate } => (samples, sample_rate),
-        AudioResponse::Error(e) => return Err(e),
-        _ => return Err("Unexpected response".to_string()),
+        AudioResponse::Error(e) => return Err(BrainDumpError::Audio(AudioError::RecordingFailed(e))),
+        _ => return Err(BrainDumpError::Other("Unexpected response".to_string())),
     };
 
     eprintln!("✓ Step 1: Recording stopped ({} samples at {}Hz)", samples.len(), sample_rate);
@@ -80,7 +83,7 @@ pub async fn stop_recording(state: State<'_, AppState>) -> Result<String, String
     WavWriter::write_with_rate(&filepath, &samples, sample_rate)
         .map_err(|e| {
             eprintln!("❌ ERROR: Failed to save WAV: {}", e);
-            e.to_string()
+            BrainDumpError::Io(e.to_string())
         })?;
 
     eprintln!("✓ Step 3: Calling Whisper FFI transcription via plugin manager");
@@ -113,12 +116,22 @@ pub async fn stop_recording(state: State<'_, AppState>) -> Result<String, String
 
     braindump::logging::info("Transcription", "Calling plugin manager transcribe()");
 
-    let transcript = manager.transcribe(&audio_data)
-        .map_err(|e| {
+    let transcript = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        manager.transcribe(&audio_data)
+    })) {
+        Ok(result) => result.map_err(|e| {
             braindump::logging::error("Transcription", &format!("Failed: {}", e));
             eprintln!("❌ ERROR: Transcription failed: {}", e);
-            e.to_string()
-        })?;
+            BrainDumpError::Transcription(TranscriptionError::TranscriptionFailed(e.to_string()))
+        })?,
+        Err(_) => {
+            braindump::logging::error("Transcription", "Whisper panicked - audio is safe");
+            eprintln!("❌ CRITICAL: Whisper crashed but your audio was saved successfully");
+            return Err(BrainDumpError::Transcription(TranscriptionError::TranscriptionFailed(
+                "Transcription crashed but your audio was saved successfully. The recording is safe in test-recordings/".to_string()
+            )));
+        }
+    };
 
     braindump::logging::info("Transcription", &format!("Result: {} characters", transcript.text.len()));
     eprintln!("✓ Transcription text: {} characters", transcript.text.len());
@@ -146,7 +159,7 @@ pub async fn stop_recording(state: State<'_, AppState>) -> Result<String, String
     std::fs::write(&transcript_path, markdown_content)
         .map_err(|e| {
             eprintln!("❌ ERROR: Failed to save transcript: {}", e);
-            e.to_string()
+            BrainDumpError::Io(e.to_string())
         })?;
 
     eprintln!("✓ Step 6: Saving to database");
@@ -169,7 +182,7 @@ pub async fn stop_recording(state: State<'_, AppState>) -> Result<String, String
     let recording_id = db.create_recording(&recording)
         .map_err(|e| {
             eprintln!("❌ ERROR: Failed to save recording to database: {}", e);
-            e.to_string()
+            BrainDumpError::Database(DatabaseError::WriteFailed(e.to_string()))
         })?;
 
     eprintln!("✓ Step 7: Recording saved to database with ID: {}", recording_id);
@@ -189,7 +202,7 @@ pub async fn stop_recording(state: State<'_, AppState>) -> Result<String, String
     db.create_transcript(&transcript_entry)
         .map_err(|e| {
             eprintln!("❌ ERROR: Failed to save transcript to database: {}", e);
-            e.to_string()
+            BrainDumpError::Database(DatabaseError::WriteFailed(e.to_string()))
         })?;
 
     eprintln!("✓ Step 8: Transcript saved to database");
@@ -214,10 +227,10 @@ pub struct TranscriptHistoryItem {
 pub async fn get_transcripts(
     state: State<'_, AppState>,
     limit: usize,
-) -> Result<Vec<TranscriptHistoryItem>, String> {
+) -> Result<Vec<TranscriptHistoryItem>, BrainDumpError> {
     let db = state.db.lock();
     let recordings = db.list_recordings(limit)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
 
     let mut results = Vec::new();
     for rec in recordings {
@@ -238,25 +251,32 @@ pub async fn get_transcripts(
 }
 
 #[tauri::command]
-pub async fn get_peak_level(state: State<'_, AppState>) -> Result<f32, String> {
+pub async fn get_peak_level(state: State<'_, AppState>) -> Result<f32, BrainDumpError> {
     let (response_tx, response_rx) = mpsc::channel();
 
     state.audio_tx.send((AudioCommand::GetPeakLevel, response_tx))
-        .map_err(|e| format!("Failed to send command: {}", e))?;
+        .map_err(|e| BrainDumpError::Audio(AudioError::DeviceInitFailed(e.to_string())))?;
 
-    match response_rx.recv().map_err(|e| format!("Failed to receive response: {}", e))? {
+    match response_rx.recv().map_err(|e| BrainDumpError::Audio(AudioError::DeviceInitFailed(e.to_string())))? {
         AudioResponse::PeakLevel(level) => Ok(level),
-        AudioResponse::Error(e) => Err(e),
-        _ => Err("Unexpected response".to_string()),
+        AudioResponse::Error(e) => Err(BrainDumpError::Audio(AudioError::RecordingFailed(e))),
+        _ => Err(BrainDumpError::Other("Unexpected response".to_string())),
     }
 }
 
 #[tauri::command]
-pub async fn is_model_loaded(state: State<'_, AppState>) -> Result<bool, String> {
+pub async fn is_model_loaded(state: State<'_, AppState>) -> Result<bool, BrainDumpError> {
     let manager = state.plugin_manager.lock();
 
     // Check if any plugin is registered and initialized
     Ok(manager.get_active()
         .map(|_| true)
         .unwrap_or(false))
+}
+
+/// Test command to verify IPC error serialization
+/// This ensures BrainDumpError can be properly serialized across the IPC boundary
+#[tauri::command]
+pub async fn test_error_serialization() -> Result<String, BrainDumpError> {
+    Err(BrainDumpError::Audio(AudioError::PermissionDenied))
 }

@@ -46,7 +46,13 @@ impl Logger {
         let logger = Logger { log_path };
         
         {
-            let mut global = LOGGER.lock().unwrap();
+            let mut global = match LOGGER.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => {
+                    eprintln!("Logger mutex poisoned during init, recovering");
+                    poisoned.into_inner()
+                }
+            };
             *global = Some(logger);
         }  // Lock dropped here - critical to prevent deadlock!
         
@@ -71,7 +77,13 @@ impl Logger {
     
     /// Internal logging function
     fn log_internal(level: LogLevel, component: &str, message: &str) -> Result<(), std::io::Error> {
-        let global = LOGGER.lock().unwrap();
+        let global = match LOGGER.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                eprintln!("Logger mutex poisoned in log_internal, recovering");
+                poisoned.into_inner()
+            }
+        };
         
         if let Some(logger) = global.as_ref() {
             let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
@@ -102,7 +114,13 @@ impl Logger {
     
     /// Get the current log file path
     pub fn get_log_path() -> Option<PathBuf> {
-        let global = LOGGER.lock().unwrap();
+        let global = match LOGGER.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                eprintln!("Logger mutex poisoned in get_log_path, recovering");
+                poisoned.into_inner()
+            }
+        };
         global.as_ref().map(|logger| logger.log_path.clone())
     }
 }

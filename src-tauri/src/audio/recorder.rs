@@ -84,7 +84,13 @@ impl Recorder {
         
         // Clear previous samples
         {
-            let mut state = self.state.lock().unwrap();
+            let mut state = match self.state.lock() {
+                Ok(guard) => guard,
+                Err(poisoned) => {
+                    eprintln!("Recorder mutex poisoned during start, recovering");
+                    poisoned.into_inner()
+                }
+            };
             state.samples.clear();
             state.is_recording = true;
             state.peak_level = 0.0;
@@ -96,12 +102,18 @@ impl Recorder {
         let stream = self.device.build_input_stream(
             &self.config,
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                let mut state = state_clone.lock().unwrap();
-                
+                let mut state = match state_clone.lock() {
+                    Ok(guard) => guard,
+                    Err(poisoned) => {
+                        eprintln!("Audio callback mutex poisoned, recovering");
+                        poisoned.into_inner()
+                    }
+                };
+
                 if state.is_recording {
                     // Append samples
                     state.samples.extend_from_slice(data);
-                    
+
                     // Update peak level for visualization
                     let peak = data.iter().map(|s| s.abs()).fold(0.0, f32::max);
                     state.peak_level = state.peak_level.max(peak);
@@ -129,20 +141,26 @@ impl Recorder {
         }
         
         // Extract samples
-        let mut state = self.state.lock().unwrap();
+        let mut state = match self.state.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                eprintln!("Recorder mutex poisoned during stop, recovering");
+                poisoned.into_inner()
+            }
+        };
         state.is_recording = false;
-        
+
         Ok(std::mem::take(&mut state.samples))
     }
     
     /// Check if currently recording
     pub fn is_recording(&self) -> bool {
-        self.state.lock().unwrap().is_recording
+        self.state.lock().map(|s| s.is_recording).unwrap_or(false)
     }
     
     /// Get current peak level (for waveform visualization)
     pub fn get_peak_level(&self) -> f32 {
-        self.state.lock().unwrap().peak_level
+        self.state.lock().map(|s| s.peak_level).unwrap_or(0.0)
     }
     
     /// Get sample rate
@@ -163,16 +181,16 @@ mod tests {
     
     #[test]
     fn test_start_stop() {
-        let mut recorder = Recorder::new().unwrap();
-        
+        let mut recorder = Recorder::new().expect("Test: failed to create recorder");
+
         assert!(!recorder.is_recording());
-        
-        recorder.start().unwrap();
+
+        recorder.start().expect("Test: failed to start recording");
         assert!(recorder.is_recording());
-        
+
         std::thread::sleep(std::time::Duration::from_millis(100));
-        
-        let samples = recorder.stop().unwrap();
+
+        let samples = recorder.stop().expect("Test: failed to stop recording");
         assert!(!recorder.is_recording());
         assert!(!samples.is_empty());
     }
