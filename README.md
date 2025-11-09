@@ -217,9 +217,9 @@ This tool exists because sometimes people need to get thoughts out of their head
 
 ## Credits
 
-**Built by:** Anonymous developer (pseudonym: Codio)  
+**Built by:** Codio  
 **AI Pair Programmer:** Claude Sonnet 4.5 (Anthropic)  
-**Location:** Dublin, Ireland  
+**Location:** Tipperary, Ireland  
 **Motivation:** Debt of gratitude to people who help others in crisis  
 
 ---
