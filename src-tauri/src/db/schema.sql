@@ -1,0 +1,55 @@
+-- V1: Initial schema for BrainDump V3.0 Stage B
+
+-- Recordings table
+CREATE TABLE IF NOT EXISTS recordings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    filepath TEXT NOT NULL UNIQUE,
+    duration_ms INTEGER NOT NULL,
+    sample_rate INTEGER DEFAULT 16000,
+    channels INTEGER DEFAULT 1,
+    file_size_bytes INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_recordings_created ON recordings(created_at DESC);
+
+-- Transcripts table
+CREATE TABLE IF NOT EXISTS transcripts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    recording_id INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    language TEXT DEFAULT 'en',
+    confidence REAL DEFAULT 1.0,
+    plugin_name TEXT NOT NULL, -- 'whisper-cpp' or 'candle'
+    transcription_duration_ms INTEGER, -- How long transcription took
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (recording_id) REFERENCES recordings(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_transcripts_recording ON transcripts(recording_id);
+CREATE INDEX IF NOT EXISTS idx_transcripts_plugin ON transcripts(plugin_name);
+
+-- Transcript segments table (for future timestamp support)
+CREATE TABLE IF NOT EXISTS segments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    transcript_id INTEGER NOT NULL,
+    start_ms INTEGER NOT NULL,
+    end_ms INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    confidence REAL DEFAULT 1.0,
+    FOREIGN KEY (transcript_id) REFERENCES transcripts(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_segments_transcript ON segments(transcript_id);
+CREATE INDEX IF NOT EXISTS idx_segments_time ON segments(start_ms, end_ms);
+
+-- Metadata table (for app settings, migrations, etc.)
+CREATE TABLE IF NOT EXISTS metadata (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Store schema version
+INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '1');

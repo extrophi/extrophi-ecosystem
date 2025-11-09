@@ -1,0 +1,38 @@
+[package]
+name = "braindump"
+version = "3.0.0"
+description = "BrainDump Voice Processor V3.0"
+authors = ["IamCodio"]
+edition = "2021"
+
+[dependencies]
+tauri = { version = "2.1", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+cpal = "0.15"
+hound = "3.5"
+thiserror = "1.0"
+rusqlite = { version = "0.32", features = ["bundled"] }
+chrono = "0.4"
+dirs = "5.0"
+candle-core = "0.8"
+candle-transformers = "0.8"
+candle-nn = "0.8"
+hf-hub = "0.3"
+tokenizers = "0.20"
+parking_lot = "0.12"
+rubato = "0.15"
+
+[build-dependencies]
+tauri-build = { version = "2.1", features = [] }
+
+[dev-dependencies]
+tokio = { version = "1.0", features = ["full"] }
+
+[lib]
+name = "braindump"
+crate-type = ["lib", "staticlib", "cdylib"]
+
+[[bin]]
+name = "braindump"
+path = "src/main.rs"

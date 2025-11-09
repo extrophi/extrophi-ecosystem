@@ -1,1 +1,43 @@
+# Environment
 .env
+
+# Dependencies
+node_modules/
+
+# Build outputs
+src-tauri/target/
+dist/
+*.dmg
+*.app
+
+# Strategic planning & PM docs (IP protection)
+docs/
+pm_docs/
+APPROVAL-*.md
+DESIGN-*.md
+PRD-*.md
+CLAUDE.md
+*HANDOFF*.md
+*INTEGRATION*.md
+
+# Test data & outputs (user privacy)
+test-recordings/
+test-transcripts/
+braindump.db
+*.wav
+recordings/
+
+# Model files (too large for git)
+*.bin
+models/
+
+# Old C++ phase files (archived)
+src/api/
+src/audio/
+src/transcription/
+
+# System files
+.DS_Store
+
+# Backup files
+*.backup
