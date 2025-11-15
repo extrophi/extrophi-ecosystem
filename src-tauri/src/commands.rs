@@ -2,8 +2,9 @@
 
 use braindump::{
     AppState, WavWriter, AudioData, Recording, Transcript, AudioCommand, AudioResponse,
-    BrainDumpError, AudioError, DatabaseError, TranscriptionError,
+    BrainDumpError, AudioError, DatabaseError, TranscriptionError, ClaudeClient,
 };
+use braindump::services::claude_api::Message as ClaudeMessage;
 use tauri::State;
 use std::time::Instant;
 use std::sync::mpsc;
@@ -389,4 +390,49 @@ pub async fn get_prompt_template(
 
     db.get_prompt_template_by_name(&name)
         .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))
+}
+// ============================================================================
+// Claude API Commands
+// ============================================================================
+
+/// Send message to Claude API (testing)
+#[tauri::command]
+pub async fn send_message_to_claude(
+    state: State<'_, AppState>,
+    message: String,
+) -> Result<String, BrainDumpError> {
+    let user_message = ClaudeMessage::user(message);
+    let claude_client = state.claude_client.lock();
+    let response = claude_client.send_message(vec![user_message]).await?;
+    drop(claude_client);
+    Ok(response)
+}
+
+/// Store API key
+#[tauri::command]
+pub async fn store_api_key(key: String) -> Result<(), BrainDumpError> {
+    ClaudeClient::store_api_key(&key)?;
+    Ok(())
+}
+
+/// Check if API key exists
+#[tauri::command]
+pub async fn has_api_key() -> Result<bool, BrainDumpError> {
+    Ok(ClaudeClient::has_api_key())
+}
+
+/// Test API key validity
+#[tauri::command]
+pub async fn test_api_key(state: State<'_, AppState>) -> Result<bool, BrainDumpError> {
+    let claude_client = state.claude_client.lock();
+    let result = claude_client.test_api_key().await?;
+    drop(claude_client);
+    Ok(result)
+}
+
+/// Delete stored API key
+#[tauri::command]
+pub async fn delete_api_key() -> Result<(), BrainDumpError> {
+    ClaudeClient::delete_api_key()?;
+    Ok(())
 }
