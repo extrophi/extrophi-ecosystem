@@ -2,6 +2,9 @@
   import { onMount, onDestroy } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { listen } from '@tauri-apps/api/event';
+  import PrivacyPanel from './components/PrivacyPanel.svelte';
+  import TemplateSelector from './components/TemplateSelector.svelte';
+  import { scanText, highlightMatches } from './lib/privacy_scanner';
 
   let isRecording = $state(false);
   let status = $state('Ready');
@@ -12,10 +15,28 @@
   let recordingTime = $state(0);
   let recordingTimer = $state(null);
 
+  // C2 Integration: Session & Message state
+  let currentSession = $state(null);
+  let sessions = $state([]);
+  let messages = $state([]);
+
   // Model loading state
   let modelStatus = $state('loading'); // 'loading' | 'ready' | 'error'
   let modelMessage = $state('Initializing Whisper model...');
   let unlisten = $state(null);
+
+  // Privacy scanning state
+  let privacyPanelVisible = $state(false);
+  let privacyMatches = $state([]);
+
+  // Template selector state
+  let selectedTemplate = $state(null);
+
+  $: privacyMatches = scanText(currentTranscript);
+  $: dangerCount = privacyMatches.filter(m => m.severity === 'danger').length;
+  $: cautionCount = privacyMatches.filter(m => m.severity === 'caution').length;
+  $: totalMatches = privacyMatches.length;
+  $: highlightedTranscript = highlightMatches(currentTranscript, privacyMatches);
 
   // Error handling utilities
   function handleError(error) {
@@ -125,6 +146,27 @@
         isRecording = false;
         status = 'Ready';
         currentTranscript = text;
+
+        // C2 Integration: Save transcript as message
+        if (currentSession && text && text.trim().length > 0) {
+          try {
+            console.log('💾 Saving message to session:', currentSession.id);
+            const message = await invoke('save_message', {
+              sessionId: currentSession.id,
+              role: 'user',
+              content: text,
+              recordingId: null // We'll link this later when we have recording IDs
+            });
+            console.log('✅ Message saved:', message);
+            messages = [...messages, message];
+          } catch (error) {
+            console.error('❌ Failed to save message:', error);
+            const errorMessage = handleError(error);
+            console.error('Message save error:', errorMessage);
+            // Don't block the UI - transcript is still shown
+          }
+        }
+
         await loadHistory();
       } catch (error) {
         console.error('❌ STOP RECORDING ERROR');
@@ -187,6 +229,54 @@
     }
   }
 
+  // C2 Integration: Session management functions
+  async function loadSessions() {
+    try {
+      const loadedSessions = await invoke('list_chat_sessions', { limit: 10 });
+      sessions = loadedSessions;
+      return loadedSessions;
+    } catch (error) {
+      const errorMessage = handleError(error);
+      console.error('Failed to load sessions:', errorMessage);
+      return [];
+    }
+  }
+
+  async function loadSessionMessages(sessionId) {
+    try {
+      const loadedMessages = await invoke('get_messages', { sessionId });
+      messages = loadedMessages;
+      console.log(`Loaded ${messages.length} messages for session ${sessionId}`);
+    } catch (error) {
+      const errorMessage = handleError(error);
+      console.error('Failed to load messages:', errorMessage);
+      messages = [];
+    }
+  }
+
+  async function createNewSession() {
+    try {
+      const title = `Brain Dump ${new Date().toLocaleDateString()}`;
+      const newSession = await invoke('create_chat_session', { title });
+      sessions = [newSession, ...sessions];
+      currentSession = newSession;
+      messages = [];
+      console.log('Created new session:', newSession);
+    } catch (error) {
+      const errorMessage = handleError(error);
+      console.error('Failed to create session:', errorMessage);
+    }
+  }
+
+  async function handleSessionChange(event) {
+    const sessionId = parseInt(event.target.value);
+    const session = sessions.find(s => s.id === sessionId);
+    if (session) {
+      currentSession = session;
+      await loadSessionMessages(session.id);
+    }
+  }
+
   onMount(async () => {
     // Set up listener for model-loading events
     unlisten = await listen('model-loading', (event) => {
@@ -206,6 +296,26 @@
     } catch (error) {
       const errorMessage = handleError(error);
       console.error('Failed to check model status:', errorMessage);
+    }
+
+    // C2 Integration: Load or create session
+    const loadedSessions = await loadSessions();
+    if (loadedSessions.length === 0) {
+      // Create default session
+      const title = `Brain Dump ${new Date().toLocaleDateString()}`;
+      try {
+        currentSession = await invoke('create_chat_session', { title });
+        sessions = [currentSession];
+        console.log('Created initial session:', currentSession);
+      } catch (error) {
+        const errorMessage = handleError(error);
+        console.error('Failed to create initial session:', errorMessage);
+      }
+    } else {
+      // Load most recent session
+      currentSession = loadedSessions[0];
+      await loadSessionMessages(currentSession.id);
+      console.log('Loaded existing session:', currentSession);
     }
 
     loadHistory();
@@ -254,20 +364,43 @@
         <h1 class="app-title">BrainDump</h1>
       </div>
 
+      <!-- C2 Integration: Session Controls -->
+      <div class="session-controls">
+        <select
+          class="session-select"
+          value={currentSession?.id || ''}
+          onchange={handleSessionChange}
+        >
+          {#if currentSession}
+            {#each sessions as session}
+              <option value={session.id}>
+                {session.title || 'Untitled Session'}
+              </option>
+            {/each}
+          {/if}
+        </select>
+        <button class="new-session-btn" onclick={createNewSession}>+ New</button>
+      </div>
+
       <div class="search-container">
         <input type="text" placeholder="Search transcripts..." class="search-input" />
       </div>
 
       <div class="transcript-list">
-        {#if historyItems.length === 0}
+        {#if messages.length === 0}
           <div class="empty-state">
-            <p>No transcripts yet</p>
+            <p>No messages yet</p>
           </div>
         {:else}
-          {#each historyItems as item}
-            <div class="transcript-item">
-              <div class="item-timestamp">{new Date(item.created_at).toLocaleString()}</div>
-              <div class="item-preview">{item.text.substring(0, 60)}{item.text.length > 60 ? '...' : ''}</div>
+          {#each messages as message}
+            <div class="transcript-item {message.role === 'assistant' ? 'assistant-message' : ''}">
+              <div class="item-timestamp">
+                {new Date(message.created_at).toLocaleString()}
+                <span class="role-badge">{message.role}</span>
+              </div>
+              <div class="item-preview">
+                {message.content.substring(0, 50)}{message.content.length > 50 ? '...' : ''}
+              </div>
             </div>
           {/each}
         {/if}
@@ -319,19 +452,37 @@
         </div>
       </div>
 
+      <!-- Template Selector -->
+      <TemplateSelector bind:selectedTemplate={selectedTemplate} />
+
       <!-- Current Transcript Display -->
       <div class="transcript-display">
         {#if currentTranscript}
           <div class="transcript-header">
             <h2>Current Transcript</h2>
-            <button class="copy-btn" onclick={() => navigator.clipboard.writeText(currentTranscript)}>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M5.5 4.5h-2a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2m-5-6h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-              </svg>
-              Copy
-            </button>
+            <div class="header-actions">
+              <button
+                class="privacy-btn"
+                class:has-issues={totalMatches > 0}
+                onclick={() => privacyPanelVisible = !privacyPanelVisible}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                </svg>
+                Privacy
+                {#if totalMatches > 0}
+                  <span class="badge" class:danger={dangerCount > 0}>{totalMatches}</span>
+                {/if}
+              </button>
+              <button class="copy-btn" onclick={() => navigator.clipboard.writeText(currentTranscript)}>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M5.5 4.5h-2a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2m-5-6h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                </svg>
+                Copy
+              </button>
+            </div>
           </div>
-          <div class="transcript-content">{currentTranscript}</div>
+          <div class="transcript-content">{@html highlightedTranscript}</div>
         {:else}
           <div class="empty-transcript">
             <p>Press the record button to start capturing audio</p>
@@ -341,6 +492,9 @@
       </div>
     </main>
   </div>
+
+  <!-- Privacy Panel Component -->
+  <PrivacyPanel bind:visible={privacyPanelVisible} text={currentTranscript} />
 </div>
 
 <style>
@@ -707,6 +861,62 @@
     margin: 0;
   }
 
+  .header-actions {
+    display: flex;
+    gap: 0.75rem;
+  }
+
+  .privacy-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #ffffff;
+    color: #333333;
+    border: 1px solid #d0d0d0;
+    padding: 0.625rem 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    position: relative;
+  }
+
+  .privacy-btn:hover {
+    background: #f5f5f5;
+    border-color: #007aff;
+    color: #007aff;
+  }
+
+  .privacy-btn.has-issues {
+    border-color: #ffc107;
+    background: #fffbf0;
+  }
+
+  .privacy-btn.has-issues:hover {
+    border-color: #ffb300;
+    background: #fff8e1;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    background: #ffc107;
+    color: #ffffff;
+    border-radius: 10px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  .badge.danger {
+    background: #dc3545;
+  }
+
   .copy-btn {
     display: flex;
     align-items: center;
@@ -890,5 +1100,77 @@
     margin-top: 0.75rem;
     font-style: italic;
     color: rgba(255, 255, 255, 0.6);
+  }
+
+  /* ==================== C2 Integration: Session Controls ==================== */
+  .session-controls {
+    display: flex;
+    gap: 8px;
+    padding: 12px 16px;
+    border-bottom: 1px solid #e0e0e0;
+    background: #fafafa;
+  }
+
+  .session-select {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    background: #ffffff;
+    color: #000000;
+    outline: none;
+    transition: border-color 0.2s ease;
+    cursor: pointer;
+  }
+
+  .session-select:focus {
+    border-color: #007aff;
+  }
+
+  .new-session-btn {
+    padding: 8px 16px;
+    background: #007aff;
+    color: #ffffff;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    white-space: nowrap;
+  }
+
+  .new-session-btn:hover {
+    background: #0056b3;
+  }
+
+  .new-session-btn:active {
+    transform: scale(0.95);
+  }
+
+  /* ==================== C2 Integration: Message Display ==================== */
+  .role-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    margin-left: 8px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    border-radius: 4px;
+    background: #007aff;
+    color: #ffffff;
+  }
+
+  .assistant-message {
+    background: #f0f8ff;
+  }
+
+  .assistant-message .role-badge {
+    background: #34c759;
+  }
+
+  .assistant-message:hover {
+    background: #e6f3ff;
   }
 </style>

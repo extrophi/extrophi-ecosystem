@@ -280,6 +280,13 @@ fn main() {
             commands::get_peak_level,
             commands::is_model_loaded,
             commands::test_error_serialization,
+            // C2 Integration Commands
+            commands::create_chat_session,
+            commands::list_chat_sessions,
+            commands::save_message,
+            commands::get_messages,
+            commands::list_prompt_templates,
+            commands::get_prompt_template,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

@@ -280,3 +280,113 @@ pub async fn is_model_loaded(state: State<'_, AppState>) -> Result<bool, BrainDu
 pub async fn test_error_serialization() -> Result<String, BrainDumpError> {
     Err(BrainDumpError::Audio(AudioError::PermissionDenied))
 }
+
+// ===== C2 Integration Commands =====
+
+use braindump::db::models::{ChatSession, Message, MessageRole};
+
+#[tauri::command]
+pub async fn create_chat_session(
+    state: State<'_, AppState>,
+    title: String,
+) -> Result<ChatSession, BrainDumpError> {
+    let db = state.db.lock();
+
+    let session = ChatSession {
+        id: None,
+        title: Some(title),
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    };
+
+    let session_id = db.create_chat_session(&session)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::WriteFailed(e.to_string())))?;
+
+    // Fetch the created session to return with ID
+    let created_session = db.get_chat_session(session_id)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+
+    Ok(created_session)
+}
+
+#[tauri::command]
+pub async fn list_chat_sessions(
+    state: State<'_, AppState>,
+    limit: usize,
+) -> Result<Vec<ChatSession>, BrainDumpError> {
+    let db = state.db.lock();
+
+    let sessions = db.list_chat_sessions(limit)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+
+    Ok(sessions)
+}
+
+#[tauri::command]
+pub async fn save_message(
+    state: State<'_, AppState>,
+    session_id: i64,
+    role: String,
+    content: String,
+    recording_id: Option<i64>,
+) -> Result<Message, BrainDumpError> {
+    let db = state.db.lock();
+
+    let message_role = MessageRole::from_str(&role)
+        .map_err(|e| BrainDumpError::Other(e))?;
+
+    let message = Message {
+        id: None,
+        session_id,
+        recording_id,
+        role: message_role,
+        content,
+        privacy_tags: None,
+        created_at: chrono::Utc::now(),
+    };
+
+    let message_id = db.create_message(&message)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::WriteFailed(e.to_string())))?;
+
+    // Return the message with ID
+    Ok(Message {
+        id: Some(message_id),
+        ..message
+    })
+}
+
+#[tauri::command]
+pub async fn get_messages(
+    state: State<'_, AppState>,
+    session_id: i64,
+) -> Result<Vec<Message>, BrainDumpError> {
+    let db = state.db.lock();
+
+    let messages = db.list_messages_by_session(session_id)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+
+    Ok(messages)
+}
+
+use braindump::db::models::PromptTemplate;
+
+#[tauri::command]
+pub async fn list_prompt_templates(
+    state: State<'_, AppState>,
+) -> Result<Vec<PromptTemplate>, BrainDumpError> {
+    let db = state.db.lock();
+
+    db.list_prompt_templates()
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))
+}
+
+#[tauri::command]
+pub async fn get_prompt_template(
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<PromptTemplate, BrainDumpError> {
+    let db = state.db.lock();
+
+    db.get_prompt_template_by_name(&name)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))
+}
