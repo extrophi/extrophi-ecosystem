@@ -50,22 +50,23 @@ fn link_whisper() {
         }
     }
 
-    #[cfg(target_os = "windows")]
-    {
-        // Windows: Link whisper.dll
-        println!("cargo:rustc-link-lib=dylib=whisper");
-
-        // Check common Windows library locations
-        if let Ok(vcpkg_root) = std::env::var("VCPKG_ROOT") {
-            let lib_path = format!("{}\\installed\\x64-windows\\lib", vcpkg_root);
-            if std::path::Path::new(&lib_path).exists() {
-                println!("cargo:rustc-link-search=native={}", lib_path);
-            }
-        }
-
-        // Also check local build directory
-        if std::path::Path::new("whisper.cpp/build/Release").exists() {
-            println!("cargo:rustc-link-search=native=whisper.cpp/build/Release");
-        }
-    }
+    // TODO: Windows support - uncomment and test when ready for Windows builds
+    // #[cfg(target_os = "windows")]
+    // {
+    //     // Windows: Link whisper.dll
+    //     println!("cargo:rustc-link-lib=dylib=whisper");
+    //
+    //     // Check common Windows library locations
+    //     if let Ok(vcpkg_root) = std::env::var("VCPKG_ROOT") {
+    //         let lib_path = format!("{}\\installed\\x64-windows\\lib", vcpkg_root);
+    //         if std::path::Path::new(&lib_path).exists() {
+    //             println!("cargo:rustc-link-search=native={}", lib_path);
+    //         }
+    //     }
+    //
+    //     // Also check local build directory
+    //     if std::path::Path::new("whisper.cpp/build/Release").exists() {
+    //         println!("cargo:rustc-link-search=native=whisper.cpp/build/Release");
+    //     }
+    // }
 }
