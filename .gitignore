@@ -11,12 +11,14 @@ dist/
 *.app
 
 # Strategic planning & PM docs (IP protection)
-docs/
+# NOTE: docs/dev/ and docs/pm/EXECUTION_PLAN_TONIGHT.md are NOT ignored (needed for agents)
+docs/pm/*
+!docs/pm/EXECUTION_PLAN_TONIGHT.md
+!docs/dev/
 pm_docs/
 APPROVAL-*.md
 DESIGN-*.md
 PRD-*.md
-CLAUDE.md
 *HANDOFF*.md
 *INTEGRATION*.md
 
@@ -41,3 +43,6 @@ src/transcription/
 
 # Backup files
 *.backup
+
+# Tools (local utilities)
+tools/
