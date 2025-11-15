@@ -5,6 +5,7 @@
   import PrivacyPanel from './components/PrivacyPanel.svelte';
   import TemplateSelector from './components/TemplateSelector.svelte';
   import SettingsPanel from './components/SettingsPanel.svelte';
+  import ChatPanel from './components/ChatPanel.svelte';
   import { scanText, highlightMatches } from './lib/privacy_scanner';
 
   let isRecording = $state(false);
@@ -35,6 +36,11 @@
 
   // Settings panel state
   let isSettingsOpen = $state(false);
+
+  // Claude integration state
+  let isSendingToClaude = $state(false);
+  let claudeError = $state('');
+  let showChatView = $state(true); // Toggle between chat and transcript view
 
   $: privacyMatches = scanText(currentTranscript);
   $: dangerCount = privacyMatches.filter(m => m.severity === 'danger').length;
@@ -281,6 +287,41 @@
     }
   }
 
+  async function sendTranscriptToClaude() {
+    if (!currentTranscript || !currentSession || isSendingToClaude) return;
+
+    isSendingToClaude = true;
+    claudeError = '';
+
+    try {
+      // Current transcript is already saved as user message in handleRecord
+      // Now send to Claude
+      const response = await invoke('send_message_to_claude', {
+        message: currentTranscript
+      });
+
+      // Save Claude's response as assistant message
+      const assistantMsg = await invoke('save_message', {
+        sessionId: currentSession.id,
+        role: 'assistant',
+        content: response,
+        recordingId: null
+      });
+
+      messages = [...messages, assistantMsg];
+      console.log('✅ Claude response saved:', assistantMsg);
+
+      // Switch to chat view to show the response
+      showChatView = true;
+    } catch (error) {
+      const errorMessage = handleError(error);
+      claudeError = errorMessage;
+      console.error('❌ Failed to send to Claude:', errorMessage);
+    } finally {
+      isSendingToClaude = false;
+    }
+  }
+
   onMount(async () => {
     // Set up listener for model-loading events
     unlisten = await listen('model-loading', (event) => {
@@ -467,41 +508,84 @@
       <!-- Template Selector -->
       <TemplateSelector bind:selectedTemplate={selectedTemplate} />
 
-      <!-- Current Transcript Display -->
-      <div class="transcript-display">
-        {#if currentTranscript}
-          <div class="transcript-header">
-            <h2>Current Transcript</h2>
-            <div class="header-actions">
-              <button
-                class="privacy-btn"
-                class:has-issues={totalMatches > 0}
-                onclick={() => privacyPanelVisible = !privacyPanelVisible}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                </svg>
-                Privacy
-                {#if totalMatches > 0}
-                  <span class="badge" class:danger={dangerCount > 0}>{totalMatches}</span>
-                {/if}
-              </button>
-              <button class="copy-btn" onclick={() => navigator.clipboard.writeText(currentTranscript)}>
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M5.5 4.5h-2a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2m-5-6h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                </svg>
-                Copy
-              </button>
-            </div>
-          </div>
-          <div class="transcript-content">{@html highlightedTranscript}</div>
-        {:else}
-          <div class="empty-transcript">
-            <p>Press the record button to start capturing audio</p>
-            <p class="hint">Your transcription will appear here</p>
-          </div>
-        {/if}
+      <!-- View Tabs -->
+      <div class="view-tabs">
+        <button
+          class="tab-btn"
+          class:active={showChatView}
+          onclick={() => showChatView = true}
+        >
+          💬 Chat ({messages.length})
+        </button>
+        <button
+          class="tab-btn"
+          class:active={!showChatView}
+          onclick={() => showChatView = false}
+        >
+          📝 Transcript
+        </button>
       </div>
+
+      <!-- Chat View -->
+      {#if showChatView}
+        <ChatPanel bind:messages={messages} bind:currentSession={currentSession} />
+      {:else}
+        <!-- Current Transcript Display -->
+        <div class="transcript-display">
+          {#if currentTranscript}
+            <div class="transcript-header">
+              <h2>Current Transcript</h2>
+              <div class="header-actions">
+                <button
+                  class="claude-btn"
+                  onclick={sendTranscriptToClaude}
+                  disabled={isSendingToClaude || !currentSession}
+                >
+                  {#if isSendingToClaude}
+                    <div class="spinner-small"></div>
+                    Sending...
+                  {:else}
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    Send to Claude
+                  {/if}
+                </button>
+                <button
+                  class="privacy-btn"
+                  class:has-issues={totalMatches > 0}
+                  onclick={() => privacyPanelVisible = !privacyPanelVisible}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                  </svg>
+                  Privacy
+                  {#if totalMatches > 0}
+                    <span class="badge" class:danger={dangerCount > 0}>{totalMatches}</span>
+                  {/if}
+                </button>
+                <button class="copy-btn" onclick={() => navigator.clipboard.writeText(currentTranscript)}>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M5.5 4.5h-2a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2m-5-6h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                  </svg>
+                  Copy
+                </button>
+              </div>
+            </div>
+            {#if claudeError}
+              <div class="error-message">
+                ⚠️ {claudeError}
+              </div>
+            {/if}
+            <div class="transcript-content">{@html highlightedTranscript}</div>
+          {:else}
+            <div class="empty-transcript">
+              <p>Press the record button to start capturing audio</p>
+              <p class="hint">Your transcription will appear here</p>
+            </div>
+          {/if}
+        </div>
+      {/if}
     </main>
   </div>
 
@@ -1212,5 +1296,88 @@
 
   .assistant-message:hover {
     background: #e6f3ff;
+  }
+
+  /* ==================== View Tabs ==================== */
+  .view-tabs {
+    display: flex;
+    gap: 8px;
+    padding: 16px 30px 0;
+    border-bottom: 1px solid #e0e0e0;
+    background: #ffffff;
+  }
+
+  .tab-btn {
+    padding: 10px 20px;
+    border: none;
+    border-bottom: 3px solid transparent;
+    background: none;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: #666666;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .tab-btn:hover {
+    color: #007aff;
+  }
+
+  .tab-btn.active {
+    color: #007aff;
+    border-bottom-color: #007aff;
+  }
+
+  /* ==================== Claude Button ==================== */
+  .claude-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #007aff;
+    color: #ffffff;
+    border: none;
+    padding: 0.625rem 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+  }
+
+  .claude-btn:hover:not(:disabled) {
+    background: #0056b3;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+  }
+
+  .claude-btn:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  .claude-btn:disabled {
+    background: #cccccc;
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  .spinner-small {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: #ffffff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ==================== Error Message ==================== */
+  .error-message {
+    margin: 16px 0;
+    padding: 12px 16px;
+    background: #fff0f0;
+    border: 1px solid #ff3b30;
+    border-radius: 8px;
+    color: #c41e3a;
+    font-size: 0.9rem;
+    line-height: 1.5;
   }
 </style>
