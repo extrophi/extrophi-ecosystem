@@ -4,6 +4,7 @@
   import { listen } from '@tauri-apps/api/event';
   import PrivacyPanel from './components/PrivacyPanel.svelte';
   import TemplateSelector from './components/TemplateSelector.svelte';
+  import SettingsPanel from './components/SettingsPanel.svelte';
   import { scanText, highlightMatches } from './lib/privacy_scanner';
 
   let isRecording = $state(false);
@@ -31,6 +32,9 @@
 
   // Template selector state
   let selectedTemplate = $state(null);
+
+  // Settings panel state
+  let isSettingsOpen = $state(false);
 
   $: privacyMatches = scanText(currentTranscript);
   $: dangerCount = privacyMatches.filter(m => m.severity === 'danger').length;
@@ -362,6 +366,14 @@
     <aside class="sidebar">
       <div class="sidebar-header">
         <h1 class="app-title">BrainDump</h1>
+        <button class="settings-btn" onclick={() => isSettingsOpen = true} aria-label="Open settings">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M12 1v6m0 6v6m0-12l-5.2 3m10.4 0L12 7m0 10l-5.2-3m10.4 0L12 17"></path>
+            <path d="M19.071 4.929A10 10 0 1 1 4.929 19.07 10 10 0 0 1 19.071 4.93z" opacity="0.4"></path>
+            <path d="M12 1v6M12 13v6M6.8 7L12 10M17.2 7L12 10M6.8 17L12 14M17.2 17L12 14"></path>
+          </svg>
+        </button>
       </div>
 
       <!-- C2 Integration: Session Controls -->
@@ -495,6 +507,9 @@
 
   <!-- Privacy Panel Component -->
   <PrivacyPanel bind:visible={privacyPanelVisible} text={currentTranscript} />
+
+  <!-- Settings Panel Component -->
+  <SettingsPanel bind:isOpen={isSettingsOpen} />
 </div>
 
 <style>
@@ -523,6 +538,9 @@
   }
 
   .sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     padding: 20px;
     border-bottom: 1px solid #e0e0e0;
     background: #ffffff;
@@ -534,6 +552,28 @@
     color: #000000;
     margin: 0;
     letter-spacing: -0.02em;
+  }
+
+  .settings-btn {
+    background: none;
+    border: none;
+    padding: 8px;
+    cursor: pointer;
+    color: #666666;
+    transition: all 0.2s ease;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .settings-btn:hover {
+    background: #f5f5f5;
+    color: #007aff;
+  }
+
+  .settings-btn:active {
+    transform: scale(0.95);
   }
 
   .search-container {
