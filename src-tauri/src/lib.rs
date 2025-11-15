@@ -13,11 +13,13 @@ pub mod db;
 pub mod plugin;
 pub mod error;
 pub mod logging;
+pub mod services;
 
 pub use audio::{Recorder, RecorderError, RecorderResult, WavWriter};
 pub use db::{initialize_db, models, repository, Recording, Repository, Segment, Transcript};
 pub use plugin::{AudioData, PluginError, Transcript as PluginTranscript, TranscriptSegment, TranscriptionPlugin};
-pub use error::{BrainDumpError, AudioError, DatabaseError, TranscriptionError};
+pub use error::{BrainDumpError, AudioError, DatabaseError, TranscriptionError, ClaudeApiError};
+pub use services::ClaudeClient;
 
 /// Commands sent to the audio thread
 pub enum AudioCommand {
@@ -40,4 +42,5 @@ pub struct AppState {
     pub plugin_manager: Arc<Mutex<plugin::manager::PluginManager>>,
     pub db: Arc<Mutex<Repository>>,
     pub audio_tx: mpsc::Sender<(AudioCommand, mpsc::Sender<AudioResponse>)>,
+    pub claude_client: Arc<Mutex<ClaudeClient>>,
 }

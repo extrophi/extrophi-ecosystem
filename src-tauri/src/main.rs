@@ -1,7 +1,7 @@
 // Prevents additional console window on Windows in release builds
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use braindump::{AppState, audio, db, plugin, AudioCommand, AudioResponse};
+use braindump::{AppState, audio, db, plugin, AudioCommand, AudioResponse, ClaudeClient};
 use std::sync::{Arc, mpsc};
 use std::thread;
 use parking_lot::Mutex;
@@ -180,10 +180,15 @@ fn main() {
     let plugin_manager_for_init = plugin_manager.clone();
     let model_path_for_init = model_path.clone();
 
+    // Initialize Claude API client
+    braindump::logging::info("Claude", "Initializing Claude API client");
+    let claude_client = Arc::new(Mutex::new(ClaudeClient::new()));
+
     let app_state = AppState {
         plugin_manager,
         db: repository,
         audio_tx,
+        claude_client,
     };
 
     braindump::logging::info("Tauri", "Building Tauri application");
@@ -287,6 +292,12 @@ fn main() {
             commands::get_messages,
             commands::list_prompt_templates,
             commands::get_prompt_template,
+            // Claude API Commands
+            commands::send_message_to_claude,
+            commands::store_api_key,
+            commands::has_api_key,
+            commands::test_api_key,
+            commands::delete_api_key,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

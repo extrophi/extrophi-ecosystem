@@ -13,6 +13,8 @@ pub enum BrainDumpError {
     Database(DatabaseError),
     /// Transcription/model errors
     Transcription(TranscriptionError),
+    /// Claude API errors
+    ClaudeApi(ClaudeApiError),
     /// File I/O errors (serialized as string)
     Io(String),
     /// Generic errors with context
@@ -80,6 +82,29 @@ pub enum TranscriptionError {
     MetalGPUFailed,
 }
 
+/// Claude API errors
+#[derive(Debug, Serialize)]
+pub enum ClaudeApiError {
+    /// API key not configured
+    ApiKeyNotFound,
+    /// API key is invalid or expired
+    InvalidApiKey,
+    /// Failed to connect to Claude API
+    ConnectionFailed(String),
+    /// Request failed (HTTP error)
+    RequestFailed(String),
+    /// Rate limit exceeded
+    RateLimitExceeded,
+    /// API response parsing failed
+    InvalidResponse(String),
+    /// Keyring storage error
+    KeyringError(String),
+    /// API timeout
+    Timeout,
+    /// Generic API error
+    Other(String),
+}
+
 // Implement Display trait for user-facing messages
 impl fmt::Display for BrainDumpError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -87,6 +112,7 @@ impl fmt::Display for BrainDumpError {
             BrainDumpError::Audio(e) => write!(f, "Audio Error: {}", e),
             BrainDumpError::Database(e) => write!(f, "Database Error: {}", e),
             BrainDumpError::Transcription(e) => write!(f, "Transcription Error: {}", e),
+            BrainDumpError::ClaudeApi(e) => write!(f, "Claude API Error: {}", e),
             BrainDumpError::Io(e) => write!(f, "File Error: {}", e),
             BrainDumpError::Other(msg) => write!(f, "{}", msg),
         }
@@ -183,11 +209,46 @@ impl fmt::Display for TranscriptionError {
     }
 }
 
+impl fmt::Display for ClaudeApiError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ClaudeApiError::ApiKeyNotFound => {
+                write!(f, "Claude API key not configured. Please add your API key in settings")
+            }
+            ClaudeApiError::InvalidApiKey => {
+                write!(f, "Invalid Claude API key. Please check your API key in settings")
+            }
+            ClaudeApiError::ConnectionFailed(msg) => {
+                write!(f, "Failed to connect to Claude API: {}", msg)
+            }
+            ClaudeApiError::RequestFailed(msg) => {
+                write!(f, "Claude API request failed: {}", msg)
+            }
+            ClaudeApiError::RateLimitExceeded => {
+                write!(f, "Claude API rate limit exceeded. Please try again in a moment")
+            }
+            ClaudeApiError::InvalidResponse(msg) => {
+                write!(f, "Invalid response from Claude API: {}", msg)
+            }
+            ClaudeApiError::KeyringError(msg) => {
+                write!(f, "Failed to access secure storage: {}", msg)
+            }
+            ClaudeApiError::Timeout => {
+                write!(f, "Claude API request timed out. Please try again")
+            }
+            ClaudeApiError::Other(msg) => {
+                write!(f, "{}", msg)
+            }
+        }
+    }
+}
+
 // Implement std::error::Error trait
 impl std::error::Error for BrainDumpError {}
 impl std::error::Error for AudioError {}
 impl std::error::Error for DatabaseError {}
 impl std::error::Error for TranscriptionError {}
+impl std::error::Error for ClaudeApiError {}
 
 // Conversions from specific errors to BrainDumpError
 impl From<AudioError> for BrainDumpError {
@@ -205,6 +266,12 @@ impl From<DatabaseError> for BrainDumpError {
 impl From<TranscriptionError> for BrainDumpError {
     fn from(err: TranscriptionError) -> Self {
         BrainDumpError::Transcription(err)
+    }
+}
+
+impl From<ClaudeApiError> for BrainDumpError {
+    fn from(err: ClaudeApiError) -> Self {
+        BrainDumpError::ClaudeApi(err)
     }
 }
 
