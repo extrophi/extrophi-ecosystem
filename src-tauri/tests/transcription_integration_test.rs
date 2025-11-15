@@ -8,6 +8,14 @@ use std::time::Instant;
 
 #[test]
 fn test_transcription_with_real_audio() {
+    // Skip if model not available
+    let model_path = "models/ggml-base.bin";
+    if !Path::new(model_path).exists() {
+        println!("Skipping test - Whisper model not found at {}", model_path);
+        println!("This is expected in CI without whisper-cpp installed");
+        return;
+    }
+
     // Skip if test audio not available
     let test_file = "../test-qa-final.wav";
     if !Path::new(test_file).exists() {
@@ -94,6 +102,14 @@ fn test_plugin_initialization() {
     println!("Testing plugin initialization...");
 
     let model_path = "models/ggml-base.bin";
+
+    // Skip if model not available
+    if !Path::new(model_path).exists() {
+        println!("Skipping test - Whisper model not found at {}", model_path);
+        println!("This is expected in CI without whisper-cpp installed");
+        return;
+    }
+
     let mut plugin = WhisperCppPlugin::new(model_path.to_string());
 
     assert_eq!(plugin.name(), "whisper-cpp");
