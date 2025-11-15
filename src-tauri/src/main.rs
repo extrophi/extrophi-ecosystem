@@ -298,6 +298,7 @@ fn main() {
             commands::has_api_key,
             commands::test_api_key,
             commands::delete_api_key,
+            commands::open_auth_browser,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

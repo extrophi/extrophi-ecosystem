@@ -436,3 +436,35 @@ pub async fn delete_api_key() -> Result<(), BrainDumpError> {
     ClaudeClient::delete_api_key()?;
     Ok(())
 }
+
+/// Open browser to Anthropic console for authentication
+#[tauri::command]
+pub async fn open_auth_browser() -> Result<(), BrainDumpError> {
+    let url = "https://console.anthropic.com/settings/keys";
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(url)
+            .spawn()
+            .map_err(|e| BrainDumpError::Other(format!("Failed to open browser: {}", e)))?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(&["/C", "start", url])
+            .spawn()
+            .map_err(|e| BrainDumpError::Other(format!("Failed to open browser: {}", e)))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(url)
+            .spawn()
+            .map_err(|e| BrainDumpError::Other(format!("Failed to open browser: {}", e)))?;
+    }
+
+    Ok(())
+}

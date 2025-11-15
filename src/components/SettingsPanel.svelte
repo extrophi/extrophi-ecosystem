@@ -9,6 +9,8 @@
   let testStatus = $state('idle'); // 'idle' | 'testing' | 'success' | 'error'
   let errorMessage = $state('');
   let successMessage = $state('');
+  let isWaitingForKey = $state(false);
+  let clipboardCheckInterval = $state(null);
 
   onMount(async () => {
     await checkApiKey();
@@ -99,6 +101,67 @@
     errorMessage = '';
     successMessage = '';
     apiKey = '';
+    stopClipboardMonitoring();
+  }
+
+  async function handleBrowserAuth() {
+    errorMessage = '';
+    successMessage = '';
+    isWaitingForKey = true;
+
+    try {
+      // Open browser to Anthropic console
+      await invoke('open_auth_browser');
+      successMessage = 'Browser opened! Copy your API key and it will auto-fill here.';
+
+      // Start monitoring clipboard for API key pattern
+      startClipboardMonitoring();
+    } catch (error) {
+      errorMessage = `Failed to open browser: ${error}`;
+      isWaitingForKey = false;
+    }
+  }
+
+  function startClipboardMonitoring() {
+    let checkCount = 0;
+    const maxChecks = 120; // Check for 2 minutes (120 * 1 second)
+
+    clipboardCheckInterval = setInterval(async () => {
+      checkCount++;
+
+      try {
+        // Read clipboard
+        const text = await navigator.clipboard.readText();
+
+        // Check if it looks like an Anthropic API key (starts with sk-ant-)
+        if (text && text.trim().startsWith('sk-ant-')) {
+          apiKey = text.trim();
+          successMessage = 'API key detected! Click Save to store it securely.';
+          isWaitingForKey = false;
+          stopClipboardMonitoring();
+        }
+      } catch (error) {
+        // Clipboard read might fail, that's okay
+        console.debug('Clipboard read attempt:', error);
+      }
+
+      // Stop after max checks
+      if (checkCount >= maxChecks) {
+        stopClipboardMonitoring();
+        if (isWaitingForKey) {
+          isWaitingForKey = false;
+          successMessage = '';
+        }
+      }
+    }, 1000); // Check every second
+  }
+
+  function stopClipboardMonitoring() {
+    if (clipboardCheckInterval) {
+      clearInterval(clipboardCheckInterval);
+      clipboardCheckInterval = null;
+    }
+    isWaitingForKey = false;
   }
 </script>
 
@@ -141,6 +204,27 @@
           </div>
         {/if}
 
+        {#if !hasKey}
+          <div class="auth-flow">
+            <button class="btn btn-browser" onclick={handleBrowserAuth} disabled={isWaitingForKey}>
+              {#if isWaitingForKey}
+                <div class="spinner-small-btn"></div>
+                Waiting for API key...
+              {:else}
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="12" y1="8" x2="12" y2="12"></line>
+                  <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                Connect via Browser
+              {/if}
+            </button>
+            <div class="or-divider">
+              <span>or</span>
+            </div>
+          </div>
+        {/if}
+
         <div class="input-group">
           <label for="api-key-input">API Key</label>
           <input
@@ -149,15 +233,22 @@
             bind:value={apiKey}
             placeholder="sk-ant-..."
             class="api-key-input"
+            class:has-value={apiKey.length > 0}
           />
           <p class="input-hint">
-            Get your API key from <a href="https://console.anthropic.com/" target="_blank" rel="noopener noreferrer">console.anthropic.com</a>
+            {#if isWaitingForKey}
+              📋 Monitoring clipboard... Copy your API key from the browser
+            {:else if !hasKey}
+              Click "Connect via Browser" or paste your key directly
+            {:else}
+              Get your API key from <a href="https://console.anthropic.com/" target="_blank" rel="noopener noreferrer">console.anthropic.com</a>
+            {/if}
           </p>
         </div>
 
         <div class="button-group">
           <button class="btn btn-primary" onclick={handleSave} disabled={!apiKey || apiKey.trim().length === 0}>
-            Save API Key
+            {isWaitingForKey ? 'Save Detected Key' : 'Save API Key'}
           </button>
 
           {#if hasKey}
@@ -426,5 +517,79 @@
     background: #fff0f0;
     border: 1px solid #ff3b30;
     color: #c41e3a;
+  }
+
+  /* Auth Flow */
+  .auth-flow {
+    margin-bottom: 20px;
+  }
+
+  .btn-browser {
+    width: 100%;
+    background: linear-gradient(135deg, #007aff 0%, #0056b3 100%);
+    color: white;
+    font-size: 1rem;
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+
+  .btn-browser:hover:not(:disabled) {
+    background: linear-gradient(135deg, #0056b3 0%, #003d82 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 122, 255, 0.4);
+  }
+
+  .btn-browser:disabled {
+    background: #cccccc;
+    cursor: not-allowed;
+    opacity: 0.7;
+  }
+
+  .spinner-small-btn {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: #ffffff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .or-divider {
+    text-align: center;
+    margin: 20px 0;
+    position: relative;
+  }
+
+  .or-divider::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: #e0e0e0;
+  }
+
+  .or-divider span {
+    background: white;
+    padding: 0 12px;
+    position: relative;
+    color: #999999;
+    font-size: 0.85rem;
+    font-weight: 500;
+  }
+
+  .api-key-input.has-value {
+    border-color: #34c759;
+    background: #f0f9f0;
   }
 </style>
