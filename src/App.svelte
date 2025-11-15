@@ -31,7 +31,6 @@
 
   // Privacy scanning state
   let privacyPanelVisible = $state(false);
-  let privacyMatches = $state([]);
 
   // Template selector state
   let selectedTemplate = $state(null);

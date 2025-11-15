@@ -153,8 +153,8 @@ impl OpenAiClient {
         entry
             .get_password()
             .map_err(|e| match e {
-                keyring::Error::NoEntry => OpenAiApiError::ApiKeyNotFound,
-                _ => OpenAiApiError::KeyringError(e.to_string()),
+                keyring::Error::NoEntry => OpenAiApiError::ApiKeyNotFound.into(),
+                _ => OpenAiApiError::KeyringError(e.to_string()).into(),
             })
     }
 
@@ -164,7 +164,7 @@ impl OpenAiClient {
             .map_err(|e| OpenAiApiError::KeyringError(e.to_string()))?;
 
         entry
-            .delete_credential()
+            .delete_password()
             .map_err(|e| OpenAiApiError::KeyringError(e.to_string()))?;
 
         Ok(())

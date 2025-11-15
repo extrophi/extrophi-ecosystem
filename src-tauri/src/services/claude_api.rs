@@ -121,6 +121,7 @@ impl RateLimiter {
 }
 
 /// Claude API client
+#[derive(Clone)]
 pub struct ClaudeClient {
     client: Client,
     rate_limiter: Arc<Mutex<RateLimiter>>,
@@ -160,8 +161,8 @@ impl ClaudeClient {
         entry
             .get_password()
             .map_err(|e| match e {
-                keyring::Error::NoEntry => ClaudeApiError::ApiKeyNotFound,
-                _ => ClaudeApiError::KeyringError(e.to_string()),
+                keyring::Error::NoEntry => ClaudeApiError::ApiKeyNotFound.into(),
+                _ => ClaudeApiError::KeyringError(e.to_string()).into(),
             })
     }
 
@@ -171,7 +172,7 @@ impl ClaudeClient {
             .map_err(|e| ClaudeApiError::KeyringError(e.to_string()))?;
 
         entry
-            .delete_credential()
+            .delete_password()
             .map_err(|e| ClaudeApiError::KeyringError(e.to_string()))?;
 
         Ok(())

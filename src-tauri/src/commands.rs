@@ -453,9 +453,8 @@ pub async fn send_message_to_claude(
     message: String,
 ) -> Result<String, BrainDumpError> {
     let user_message = ClaudeMessage::user(message);
-    let claude_client = state.claude_client.lock();
+    let claude_client = state.claude_client.lock().clone();
     let response = claude_client.send_message(vec![user_message]).await?;
-    drop(claude_client);
     Ok(response)
 }
 
@@ -475,9 +474,8 @@ pub async fn has_api_key() -> Result<bool, BrainDumpError> {
 /// Test API key validity
 #[tauri::command]
 pub async fn test_api_key(state: State<'_, AppState>) -> Result<bool, BrainDumpError> {
-    let claude_client = state.claude_client.lock();
+    let claude_client = state.claude_client.lock().clone();
     let result = claude_client.test_api_key().await?;
-    drop(claude_client);
     Ok(result)
 }
 
