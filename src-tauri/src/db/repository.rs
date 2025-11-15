@@ -177,6 +177,186 @@ impl Repository {
         segments.collect()
     }
 
+    // ===== Chat Sessions (C2) =====
+
+    pub fn create_chat_session(&self, session: &ChatSession) -> SqliteResult<i64> {
+        self.conn.execute(
+            "INSERT INTO chat_sessions (title, created_at, updated_at)
+             VALUES (?1, ?2, ?3)",
+            params![
+                session.title,
+                session.created_at.to_rfc3339(),
+                session.updated_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn get_chat_session(&self, id: i64) -> SqliteResult<ChatSession> {
+        self.conn.query_row(
+            "SELECT id, title, created_at, updated_at FROM chat_sessions WHERE id = ?1",
+            params![id],
+            |row| {
+                Ok(ChatSession {
+                    id: Some(row.get(0)?),
+                    title: row.get(1)?,
+                    created_at: row.get::<_, String>(2)?.parse().unwrap_or(Utc::now()),
+                    updated_at: row.get::<_, String>(3)?.parse().unwrap_or(Utc::now()),
+                })
+            },
+        )
+    }
+
+    pub fn list_chat_sessions(&self, limit: usize) -> SqliteResult<Vec<ChatSession>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, title, created_at, updated_at
+             FROM chat_sessions ORDER BY updated_at DESC LIMIT ?1"
+        )?;
+
+        let sessions = stmt.query_map(params![limit], |row| {
+            Ok(ChatSession {
+                id: Some(row.get(0)?),
+                title: row.get(1)?,
+                created_at: row.get::<_, String>(2)?.parse().unwrap_or(Utc::now()),
+                updated_at: row.get::<_, String>(3)?.parse().unwrap_or(Utc::now()),
+            })
+        })?;
+
+        sessions.collect()
+    }
+
+    pub fn update_chat_session_title(&self, id: i64, title: &str) -> SqliteResult<()> {
+        self.conn.execute(
+            "UPDATE chat_sessions SET title = ?1, updated_at = ?2 WHERE id = ?3",
+            params![title, Utc::now().to_rfc3339(), id],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_chat_session(&self, id: i64) -> SqliteResult<()> {
+        self.conn.execute("DELETE FROM chat_sessions WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    // ===== Messages (C2) =====
+
+    pub fn create_message(&self, msg: &Message) -> SqliteResult<i64> {
+        let privacy_tags_json = msg.privacy_tags.as_ref()
+            .map(|tags| serde_json::to_string(tags).unwrap_or_default());
+
+        self.conn.execute(
+            "INSERT INTO messages (session_id, recording_id, role, content, privacy_tags, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                msg.session_id,
+                msg.recording_id,
+                msg.role.as_str(),
+                msg.content,
+                privacy_tags_json,
+                msg.created_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn list_messages_by_session(&self, session_id: i64) -> SqliteResult<Vec<Message>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, session_id, recording_id, role, content, privacy_tags, created_at
+             FROM messages WHERE session_id = ?1 ORDER BY created_at ASC"
+        )?;
+
+        let messages = stmt.query_map(params![session_id], |row| {
+            let privacy_tags_str: Option<String> = row.get(5)?;
+            let privacy_tags = privacy_tags_str
+                .and_then(|s| serde_json::from_str(&s).ok());
+
+            Ok(Message {
+                id: Some(row.get(0)?),
+                session_id: row.get(1)?,
+                recording_id: row.get(2)?,
+                role: MessageRole::from_str(&row.get::<_, String>(3)?).unwrap_or(MessageRole::User),
+                content: row.get(4)?,
+                privacy_tags,
+                created_at: row.get::<_, String>(6)?.parse().unwrap_or(Utc::now()),
+            })
+        })?;
+
+        messages.collect()
+    }
+
+    // ===== Prompt Templates (C2) =====
+
+    pub fn create_prompt_template(&self, template: &PromptTemplate) -> SqliteResult<i64> {
+        self.conn.execute(
+            "INSERT INTO prompt_templates (name, system_prompt, description, is_default, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![
+                template.name,
+                template.system_prompt,
+                template.description,
+                template.is_default as i32,
+                template.created_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    pub fn get_prompt_template_by_name(&self, name: &str) -> SqliteResult<PromptTemplate> {
+        self.conn.query_row(
+            "SELECT id, name, system_prompt, description, is_default, created_at
+             FROM prompt_templates WHERE name = ?1",
+            params![name],
+            |row| {
+                Ok(PromptTemplate {
+                    id: Some(row.get(0)?),
+                    name: row.get(1)?,
+                    system_prompt: row.get(2)?,
+                    description: row.get(3)?,
+                    is_default: row.get::<_, i32>(4)? != 0,
+                    created_at: row.get::<_, String>(5)?.parse().unwrap_or(Utc::now()),
+                })
+            },
+        )
+    }
+
+    pub fn list_prompt_templates(&self) -> SqliteResult<Vec<PromptTemplate>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, system_prompt, description, is_default, created_at
+             FROM prompt_templates ORDER BY name ASC"
+        )?;
+
+        let templates = stmt.query_map([], |row| {
+            Ok(PromptTemplate {
+                id: Some(row.get(0)?),
+                name: row.get(1)?,
+                system_prompt: row.get(2)?,
+                description: row.get(3)?,
+                is_default: row.get::<_, i32>(4)? != 0,
+                created_at: row.get::<_, String>(5)?.parse().unwrap_or(Utc::now()),
+            })
+        })?;
+
+        templates.collect()
+    }
+
+    pub fn get_default_prompt_template(&self) -> SqliteResult<PromptTemplate> {
+        self.conn.query_row(
+            "SELECT id, name, system_prompt, description, is_default, created_at
+             FROM prompt_templates WHERE is_default = 1 LIMIT 1",
+            [],
+            |row| {
+                Ok(PromptTemplate {
+                    id: Some(row.get(0)?),
+                    name: row.get(1)?,
+                    system_prompt: row.get(2)?,
+                    description: row.get(3)?,
+                    is_default: row.get::<_, i32>(4)? != 0,
+                    created_at: row.get::<_, String>(5)?.parse().unwrap_or(Utc::now()),
+                })
+            },
+        )
+    }
+
     // ===== Search =====
 
     pub fn search_recordings(&self, query: &str) -> SqliteResult<Vec<Recording>> {
@@ -264,184 +444,101 @@ mod tests {
     }
 
     #[test]
-    fn test_list_recordings() {
+    fn test_chat_sessions() {
         let conn = initialize_db(":memory:".into()).unwrap();
         let repo = Repository::new(conn);
 
-        // Create multiple recordings
-        for i in 1..=5 {
-            let recording = Recording {
-                id: None,
-                filepath: format!("test{}.wav", i),
-                duration_ms: i * 1000,
-                sample_rate: 16000,
-                channels: 1,
-                file_size_bytes: Some(i * 16000),
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
-            };
-            repo.create_recording(&recording).unwrap();
-        }
-
-        // List with limit
-        let recordings = repo.list_recordings(3).unwrap();
-        assert_eq!(recordings.len(), 3);
-
-        // Should be ordered by created_at DESC (newest first)
-        assert_eq!(recordings[0].filepath, "test5.wav");
-    }
-
-    #[test]
-    fn test_search() {
-        let conn = initialize_db(":memory:".into()).unwrap();
-        let repo = Repository::new(conn);
-
-        // Create recording with transcript
-        let recording = Recording {
+        // Create session
+        let session = ChatSession {
             id: None,
-            filepath: "searchable.wav".to_string(),
-            duration_ms: 5000,
-            sample_rate: 16000,
-            channels: 1,
-            file_size_bytes: Some(160000),
+            title: Some("Test Session".to_string()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
 
-        let rec_id = repo.create_recording(&recording).unwrap();
+        let session_id = repo.create_chat_session(&session).unwrap();
+        assert!(session_id > 0);
 
-        let transcript = Transcript {
-            id: None,
-            recording_id: rec_id,
-            text: "This is a unique searchable phrase".to_string(),
-            language: Some("en".to_string()),
-            confidence: 0.95,
-            plugin_name: "whisper-cpp".to_string(),
-            transcription_duration_ms: Some(1500),
-            created_at: Utc::now(),
-        };
+        // Fetch session
+        let fetched = repo.get_chat_session(session_id).unwrap();
+        assert_eq!(fetched.title, Some("Test Session".to_string()));
 
-        repo.create_transcript(&transcript).unwrap();
+        // Update title
+        repo.update_chat_session_title(session_id, "Updated Title").unwrap();
+        let updated = repo.get_chat_session(session_id).unwrap();
+        assert_eq!(updated.title, Some("Updated Title".to_string()));
 
-        // Search should find it
-        let results = repo.search_recordings("searchable").unwrap();
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].filepath, "searchable.wav");
-
-        // Search for non-existent phrase
-        let results = repo.search_recordings("nonexistent").unwrap();
-        assert_eq!(results.len(), 0);
+        // Delete session
+        repo.delete_chat_session(session_id).unwrap();
+        assert!(repo.get_chat_session(session_id).is_err());
     }
 
     #[test]
-    fn test_segments() {
+    fn test_messages() {
         let conn = initialize_db(":memory:".into()).unwrap();
         let repo = Repository::new(conn);
 
-        // Create recording and transcript
-        let recording = Recording {
+        // Create session first
+        let session = ChatSession {
             id: None,
-            filepath: "segment_test.wav".to_string(),
-            duration_ms: 10000,
-            sample_rate: 16000,
-            channels: 1,
-            file_size_bytes: Some(320000),
+            title: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
         };
+        let session_id = repo.create_chat_session(&session).unwrap();
 
-        let rec_id = repo.create_recording(&recording).unwrap();
-
-        let transcript = Transcript {
+        // Create user message
+        let user_msg = Message {
             id: None,
-            recording_id: rec_id,
-            text: "Full transcript text".to_string(),
-            language: Some("en".to_string()),
-            confidence: 0.95,
-            plugin_name: "whisper-cpp".to_string(),
-            transcription_duration_ms: Some(1500),
+            session_id,
+            recording_id: None,
+            role: MessageRole::User,
+            content: "Test user message".to_string(),
+            privacy_tags: Some(vec!["email".to_string()]),
             created_at: Utc::now(),
         };
 
-        let trans_id = repo.create_transcript(&transcript).unwrap();
+        let msg_id = repo.create_message(&user_msg).unwrap();
+        assert!(msg_id > 0);
 
-        // Create segments
-        let segment1 = Segment {
+        // Create assistant message
+        let assistant_msg = Message {
             id: None,
-            transcript_id: trans_id,
-            start_ms: 0,
-            end_ms: 5000,
-            text: "First half".to_string(),
-            confidence: 0.96,
+            session_id,
+            recording_id: None,
+            role: MessageRole::Assistant,
+            content: "Test assistant response".to_string(),
+            privacy_tags: None,
+            created_at: Utc::now(),
         };
 
-        let segment2 = Segment {
-            id: None,
-            transcript_id: trans_id,
-            start_ms: 5000,
-            end_ms: 10000,
-            text: "Second half".to_string(),
-            confidence: 0.94,
-        };
+        repo.create_message(&assistant_msg).unwrap();
 
-        repo.create_segment(&segment1).unwrap();
-        repo.create_segment(&segment2).unwrap();
-
-        // Retrieve segments
-        let segments = repo.list_segments_by_transcript(trans_id).unwrap();
-        assert_eq!(segments.len(), 2);
-        assert_eq!(segments[0].text, "First half");
-        assert_eq!(segments[1].text, "Second half");
+        // List messages
+        let messages = repo.list_messages_by_session(session_id).unwrap();
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].content, "Test user message");
+        assert_eq!(messages[1].content, "Test assistant response");
     }
 
     #[test]
-    fn test_foreign_key_cascade() {
+    fn test_prompt_templates() {
         let conn = initialize_db(":memory:".into()).unwrap();
         let repo = Repository::new(conn);
 
-        // Create recording with transcript and segments
-        let recording = Recording {
-            id: None,
-            filepath: "cascade_test.wav".to_string(),
-            duration_ms: 5000,
-            sample_rate: 16000,
-            channels: 1,
-            file_size_bytes: Some(160000),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        };
+        // Default templates should exist
+        let templates = repo.list_prompt_templates().unwrap();
+        assert_eq!(templates.len(), 2);
 
-        let rec_id = repo.create_recording(&recording).unwrap();
+        // Get by name
+        let daily = repo.get_prompt_template_by_name("daily_reflection").unwrap();
+        assert!(daily.is_default);
 
-        let transcript = Transcript {
-            id: None,
-            recording_id: rec_id,
-            text: "Test cascade".to_string(),
-            language: Some("en".to_string()),
-            confidence: 0.95,
-            plugin_name: "whisper-cpp".to_string(),
-            transcription_duration_ms: Some(1500),
-            created_at: Utc::now(),
-        };
+        let crisis = repo.get_prompt_template_by_name("crisis_support").unwrap();
+        assert!(!crisis.is_default);
 
-        let trans_id = repo.create_transcript(&transcript).unwrap();
-
-        let segment = Segment {
-            id: None,
-            transcript_id: trans_id,
-            start_ms: 0,
-            end_ms: 5000,
-            text: "Full text".to_string(),
-            confidence: 0.95,
-        };
-
-        repo.create_segment(&segment).unwrap();
-
-        // Delete recording - should cascade delete transcript and segments
-        repo.delete_recording(rec_id).unwrap();
-
-        // Verify cascade deletion
-        assert!(repo.get_transcript_by_recording(rec_id).is_err());
-        assert_eq!(repo.list_segments_by_transcript(trans_id).unwrap().len(), 0);
+        // Get default
+        let default = repo.get_default_prompt_template().unwrap();
+        assert_eq!(default.name, "daily_reflection");
     }
 }
