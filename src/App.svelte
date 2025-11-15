@@ -42,11 +42,11 @@
   let claudeError = $state('');
   let showChatView = $state(true); // Toggle between chat and transcript view
 
-  $: privacyMatches = scanText(currentTranscript);
-  $: dangerCount = privacyMatches.filter(m => m.severity === 'danger').length;
-  $: cautionCount = privacyMatches.filter(m => m.severity === 'caution').length;
-  $: totalMatches = privacyMatches.length;
-  $: highlightedTranscript = highlightMatches(currentTranscript, privacyMatches);
+  let privacyMatches = $derived(scanText(currentTranscript));
+  let dangerCount = $derived(privacyMatches.filter(m => m.severity === 'danger').length);
+  let cautionCount = $derived(privacyMatches.filter(m => m.severity === 'caution').length);
+  let totalMatches = $derived(privacyMatches.length);
+  let highlightedTranscript = $derived(highlightMatches(currentTranscript, privacyMatches));
 
   // Error handling utilities
   function handleError(error) {
