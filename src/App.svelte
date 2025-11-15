@@ -6,6 +6,8 @@
   import TemplateSelector from './components/TemplateSelector.svelte';
   import SettingsPanel from './components/SettingsPanel.svelte';
   import ChatPanel from './components/ChatPanel.svelte';
+  import ChatView from './lib/components/ChatView.svelte';
+  import ToastContainer from './lib/components/ToastContainer.svelte';
   import { scanText, highlightMatches } from './lib/privacy_scanner';
 
   let isRecording = $state(false);
@@ -148,31 +150,51 @@
         stopRecordingTimer();
         console.log('📤 Calling stop_recording command...');
         console.log('Timestamp:', new Date().toISOString());
-        const text = await invoke('stop_recording');
+        const result = await invoke('stop_recording');
         console.log('✅ RESPONSE RECEIVED from stop_recording command');
+        console.log('Result:', result);
+
+        // Extract data from new response format
+        const text = result.transcript;
+        const sessionId = result.session_id;
+        const recordingId = result.recording_id;
+
         console.log('Transcript length:', text?.length || 0, 'characters');
-        console.log('Transcript preview:', text?.substring(0, 100) || 'NO TEXT');
-        console.log('Full transcript:', text);
+        console.log('Session ID:', sessionId);
+        console.log('Recording ID:', recordingId);
+
         isRecording = false;
         status = 'Ready';
         currentTranscript = text;
 
-        // C2 Integration: Save transcript as message
-        if (currentSession && text && text.trim().length > 0) {
+        // Auto-session creation: Load the newly created session
+        if (sessionId) {
           try {
-            console.log('💾 Saving message to session:', currentSession.id);
-            const message = await invoke('save_message', {
-              sessionId: currentSession.id,
-              role: 'user',
-              content: text,
-              recordingId: null // We'll link this later when we have recording IDs
-            });
-            console.log('✅ Message saved:', message);
-            messages = [...messages, message];
+            console.log('🔄 Loading newly created session:', sessionId);
+
+            // Reload sessions list to include the new session
+            const loadedSessions = await loadSessions();
+
+            // Find the newly created session in the list
+            const newSession = loadedSessions.find(s => s.id === sessionId);
+            if (newSession) {
+              currentSession = newSession;
+
+              // Load messages for this session
+              await loadSessionMessages(sessionId);
+
+              // Switch to chat view to show the new session
+              showChatView = true;
+
+              console.log('✅ Auto-switched to new chat session:', newSession);
+              status = 'Session created! Ready for chat.';
+            } else {
+              console.warn('⚠️ New session not found in sessions list');
+            }
           } catch (error) {
-            console.error('❌ Failed to save message:', error);
+            console.error('❌ Failed to load new session:', error);
             const errorMessage = handleError(error);
-            console.error('Message save error:', errorMessage);
+            console.error('Session load error:', errorMessage);
             // Don't block the UI - transcript is still shown
           }
         }
@@ -594,7 +616,22 @@
 
   <!-- Settings Panel Component -->
   <SettingsPanel bind:isOpen={isSettingsOpen} />
+
+  <!-- Toast Notifications -->
+  <ToastContainer />
 </div>
+
+<!--
+  Alternative Chat UI Integration:
+  To use the new ChatView component instead of ChatPanel, replace the ChatPanel usage with:
+  <ChatView />
+
+  This provides a complete chat interface with:
+  - Sessions list sidebar
+  - Message thread display
+  - Input controls with prompt selection
+  - Toast notifications for errors
+-->
 
 <style>
   /* ==================== Global Layout ==================== */

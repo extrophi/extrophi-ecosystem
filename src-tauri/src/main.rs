@@ -1,7 +1,7 @@
 // Prevents additional console window on Windows in release builds
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use braindump::{AppState, audio, db, plugin, AudioCommand, AudioResponse, ClaudeClient};
+use braindump::{AppState, audio, db, plugin, AudioCommand, AudioResponse, ClaudeClient, OpenAiClient};
 use std::sync::{Arc, mpsc};
 use std::thread;
 use parking_lot::Mutex;
@@ -184,11 +184,16 @@ fn main() {
     braindump::logging::info("Claude", "Initializing Claude API client");
     let claude_client = Arc::new(Mutex::new(ClaudeClient::new()));
 
+    // Initialize OpenAI API client
+    braindump::logging::info("OpenAI", "Initializing OpenAI API client");
+    let openai_client = Arc::new(OpenAiClient::new());
+
     let app_state = AppState {
         plugin_manager,
         db: repository,
         audio_tx,
         claude_client,
+        openai_client,
     };
 
     braindump::logging::info("Tauri", "Building Tauri application");
@@ -307,6 +312,18 @@ fn main() {
             commands::test_api_key,
             commands::delete_api_key,
             commands::open_auth_browser,
+            // OpenAI API Commands
+            commands::send_openai_message,
+            commands::store_openai_key,
+            commands::has_openai_key,
+            commands::test_openai_connection,
+            commands::delete_openai_key,
+            commands::open_openai_auth_browser,
+            // Export Commands
+            commands::export_session,
+            // File-based Prompt Template Commands
+            commands::load_prompt,
+            commands::list_prompts,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

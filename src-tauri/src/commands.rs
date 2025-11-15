@@ -58,7 +58,7 @@ pub async fn start_recording(state: State<'_, AppState>) -> Result<String, Brain
 }
 
 #[tauri::command]
-pub async fn stop_recording(state: State<'_, AppState>) -> Result<String, BrainDumpError> {
+pub async fn stop_recording(state: State<'_, AppState>) -> Result<serde_json::Value, BrainDumpError> {
     // Stop recording via audio thread
     let (response_tx, response_rx) = mpsc::channel();
 
@@ -207,10 +207,61 @@ pub async fn stop_recording(state: State<'_, AppState>) -> Result<String, BrainD
         })?;
 
     eprintln!("✓ Step 8: Transcript saved to database");
+
+    // [NEW] Auto-create chat session with transcript as first message
+    eprintln!("✓ Step 9: Auto-creating chat session");
+    let session_id = {
+        let now = chrono::Utc::now();
+
+        // Create session with timestamp title
+        let session = ChatSession {
+            id: None,
+            title: Some(format!("Brain Dump {}", now.format("%Y-%m-%d %H:%M"))),
+            created_at: now,
+            updated_at: now,
+        };
+
+        let session_id = db.create_chat_session(&session)
+            .map_err(|e| {
+                eprintln!("❌ ERROR: Failed to create chat session: {}", e);
+                BrainDumpError::Database(DatabaseError::WriteFailed(e.to_string()))
+            })?;
+
+        eprintln!("✓ Step 10: Chat session created with ID: {}", session_id);
+
+        // Save transcript as first message (role: user)
+        let message = Message {
+            id: None,
+            session_id,
+            recording_id: Some(recording_id),
+            role: MessageRole::User,
+            content: transcript.text.clone(),
+            privacy_tags: None,
+            created_at: now,
+        };
+
+        db.create_message(&message)
+            .map_err(|e| {
+                eprintln!("❌ ERROR: Failed to save message: {}", e);
+                BrainDumpError::Database(DatabaseError::WriteFailed(e.to_string()))
+            })?;
+
+        eprintln!("✓ Step 11: Transcript saved as user message");
+
+        session_id
+    };
+
     drop(db);
 
-    eprintln!("✓ Step 9: All steps completed successfully");
-    Ok(transcript.text)
+    eprintln!("✓ Step 12: All steps completed successfully");
+
+    // Return both transcript and session_id
+    Ok(serde_json::json!({
+        "transcript": transcript.text,
+        "session_id": session_id,
+        "recording_id": recording_id,
+        "message": "Recording completed and chat session created"
+    }))
 }
 
 use serde::Serialize;
@@ -467,4 +518,141 @@ pub async fn open_auth_browser() -> Result<(), BrainDumpError> {
     }
 
     Ok(())
+}
+
+// ============================================================================
+// OpenAI API Commands
+// ============================================================================
+
+use braindump::services::openai_api::ChatMessage as OpenAiChatMessage;
+use braindump::OpenAiClient;
+
+/// Send message to OpenAI API
+#[tauri::command]
+pub async fn send_openai_message(
+    state: State<'_, AppState>,
+    messages: Vec<(String, String)>, // (role, content) pairs
+    system_prompt: Option<String>,
+) -> Result<String, BrainDumpError> {
+    let openai_client = &state.openai_client;
+
+    // Convert tuples to ChatMessage format
+    let chat_messages: Vec<OpenAiChatMessage> = messages
+        .into_iter()
+        .map(|(role, content)| OpenAiChatMessage {
+            role,
+            content,
+        })
+        .collect();
+
+    let response = openai_client.send_message(chat_messages, system_prompt).await?;
+    Ok(response)
+}
+
+/// Store OpenAI API key
+#[tauri::command]
+pub async fn store_openai_key(key: String) -> Result<(), BrainDumpError> {
+    OpenAiClient::store_api_key(&key)?;
+    Ok(())
+}
+
+/// Check if OpenAI API key exists
+#[tauri::command]
+pub async fn has_openai_key() -> Result<bool, BrainDumpError> {
+    Ok(OpenAiClient::has_api_key())
+}
+
+/// Test OpenAI API key validity
+#[tauri::command]
+pub async fn test_openai_connection(
+    state: State<'_, AppState>,
+) -> Result<bool, BrainDumpError> {
+    let result = state.openai_client.test_connection().await?;
+    Ok(result)
+}
+
+/// Delete stored OpenAI API key
+#[tauri::command]
+pub async fn delete_openai_key() -> Result<(), BrainDumpError> {
+    OpenAiClient::delete_api_key()?;
+    Ok(())
+}
+
+/// Open browser to OpenAI console for API key
+#[tauri::command]
+pub async fn open_openai_auth_browser() -> Result<(), BrainDumpError> {
+    let url = "https://platform.openai.com/api-keys";
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(url)
+            .spawn()
+            .map_err(|e| BrainDumpError::Other(format!("Failed to open browser: {}", e)))?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(&["/C", "start", url])
+            .spawn()
+            .map_err(|e| BrainDumpError::Other(format!("Failed to open browser: {}", e)))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(url)
+            .spawn()
+            .map_err(|e| BrainDumpError::Other(format!("Failed to open browser: {}", e)))?;
+    }
+
+    Ok(())
+}
+
+// ============================================================================
+// Export Commands
+// ============================================================================
+
+/// Export chat session to markdown
+#[tauri::command]
+pub async fn export_session(
+    session_id: i64,
+    state: State<'_, AppState>
+) -> Result<String, BrainDumpError> {
+    let db = state.db.lock();
+
+    // Get session and messages
+    let session = db.get_chat_session(session_id)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+
+    let messages = db.list_messages_by_session(session_id)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+
+    drop(db);
+
+    if messages.is_empty() {
+        return Err(BrainDumpError::Other("Cannot export empty session".to_string()));
+    }
+
+    // Export to markdown
+    let file_path = braindump::export::export_session_to_markdown(&session, &messages)?;
+
+    Ok(file_path.to_string_lossy().to_string())
+}
+
+// ============================================================================
+// File-based Prompt Template Commands
+// ============================================================================
+
+/// Load a prompt template from markdown file by name
+#[tauri::command]
+pub async fn load_prompt(name: String) -> Result<String, BrainDumpError> {
+    braindump::prompts::load_prompt_template(&name)
+}
+
+/// List all available prompt templates from prompts directory
+#[tauri::command]
+pub async fn list_prompts() -> Result<Vec<String>, BrainDumpError> {
+    braindump::prompts::list_prompt_templates()
 }

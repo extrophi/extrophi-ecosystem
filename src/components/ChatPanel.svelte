@@ -8,6 +8,7 @@
   let inputText = $state('');
   let isLoading = $state(false);
   let messagesContainer;
+  let exportStatus = $state('');
 
   // Auto-scroll to bottom when new messages arrive
   $effect(() => {
@@ -78,9 +79,47 @@
     const date = new Date(timestamp);
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
+
+  async function exportSession() {
+    if (!currentSession) {
+      exportStatus = 'error:No session selected';
+      setTimeout(() => exportStatus = '', 3000);
+      return;
+    }
+
+    try {
+      const filePath = await invoke('export_session', {
+        sessionId: currentSession.id
+      });
+      exportStatus = `success:Exported to: ${filePath}`;
+      setTimeout(() => exportStatus = '', 5000);
+    } catch (error) {
+      console.error('Export failed:', error);
+      exportStatus = `error:Export failed: ${error}`;
+      setTimeout(() => exportStatus = '', 5000);
+    }
+  }
 </script>
 
 <div class="chat-panel">
+  <div class="chat-header">
+    <h3>Chat Session</h3>
+    <div class="header-actions">
+      {#if exportStatus}
+        <div class="export-toast {exportStatus.startsWith('success') ? 'success' : 'error'}">
+          {exportStatus.split(':')[1]}
+        </div>
+      {/if}
+      <button onclick={exportSession} class="export-btn" disabled={!currentSession || messages.length === 0}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        Export to Markdown
+      </button>
+    </div>
+  </div>
   <div class="messages-container" bind:this={messagesContainer}>
     {#if messages.length === 0}
       <div class="empty-state">
@@ -141,6 +180,90 @@
     flex-direction: column;
     height: 100%;
     background: #ffffff;
+  }
+
+  .chat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid #e0e0e0;
+    background: #fafafa;
+  }
+
+  .chat-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #000000;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .export-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #007aff;
+    color: #ffffff;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+  }
+
+  .export-btn:hover:not(:disabled) {
+    background: #0056b3;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+  }
+
+  .export-btn:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  .export-btn:disabled {
+    background: #cccccc;
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  .export-toast {
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    animation: slideIn 0.3s ease-out;
+  }
+
+  .export-toast.success {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+  }
+
+  .export-toast.error {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+  }
+
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateX(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
   }
 
   .messages-container {

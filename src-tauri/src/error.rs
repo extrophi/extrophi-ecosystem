@@ -15,6 +15,10 @@ pub enum BrainDumpError {
     Transcription(TranscriptionError),
     /// Claude API errors
     ClaudeApi(ClaudeApiError),
+    /// OpenAI API errors
+    OpenAiApi(OpenAiApiError),
+    /// Prompt template errors
+    Prompt(PromptError),
     /// File I/O errors (serialized as string)
     Io(String),
     /// Generic errors with context
@@ -105,6 +109,42 @@ pub enum ClaudeApiError {
     Other(String),
 }
 
+/// OpenAI API errors
+#[derive(Debug, Serialize)]
+pub enum OpenAiApiError {
+    /// API key not configured
+    ApiKeyNotFound,
+    /// API key is invalid or expired
+    InvalidApiKey,
+    /// Failed to connect to OpenAI API
+    ConnectionFailed(String),
+    /// Request failed (HTTP error)
+    RequestFailed(String),
+    /// Rate limit exceeded
+    RateLimitExceeded,
+    /// API response parsing failed
+    InvalidResponse(String),
+    /// Keyring storage error
+    KeyringError(String),
+    /// API timeout
+    Timeout,
+    /// Generic API error
+    Other(String),
+}
+
+/// Prompt template errors
+#[derive(Debug, Serialize)]
+pub enum PromptError {
+    /// Prompt template not found at expected location
+    PromptNotFound(String),
+    /// Failed to read prompt template file
+    PromptReadError(String),
+    /// Prompt directory not accessible
+    DirectoryNotFound(String),
+    /// Prompt template is empty or invalid
+    InvalidTemplate(String),
+}
+
 // Implement Display trait for user-facing messages
 impl fmt::Display for BrainDumpError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -113,6 +153,8 @@ impl fmt::Display for BrainDumpError {
             BrainDumpError::Database(e) => write!(f, "Database Error: {}", e),
             BrainDumpError::Transcription(e) => write!(f, "Transcription Error: {}", e),
             BrainDumpError::ClaudeApi(e) => write!(f, "Claude API Error: {}", e),
+            BrainDumpError::OpenAiApi(e) => write!(f, "OpenAI API Error: {}", e),
+            BrainDumpError::Prompt(e) => write!(f, "Prompt Error: {}", e),
             BrainDumpError::Io(e) => write!(f, "File Error: {}", e),
             BrainDumpError::Other(msg) => write!(f, "{}", msg),
         }
@@ -243,12 +285,67 @@ impl fmt::Display for ClaudeApiError {
     }
 }
 
+impl fmt::Display for OpenAiApiError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OpenAiApiError::ApiKeyNotFound => {
+                write!(f, "OpenAI API key not configured. Please add your API key in settings")
+            }
+            OpenAiApiError::InvalidApiKey => {
+                write!(f, "Invalid OpenAI API key. Please check your API key in settings")
+            }
+            OpenAiApiError::ConnectionFailed(msg) => {
+                write!(f, "Failed to connect to OpenAI API: {}", msg)
+            }
+            OpenAiApiError::RequestFailed(msg) => {
+                write!(f, "OpenAI API request failed: {}", msg)
+            }
+            OpenAiApiError::RateLimitExceeded => {
+                write!(f, "OpenAI API rate limit exceeded. Please try again in a moment")
+            }
+            OpenAiApiError::InvalidResponse(msg) => {
+                write!(f, "Invalid response from OpenAI API: {}", msg)
+            }
+            OpenAiApiError::KeyringError(msg) => {
+                write!(f, "Failed to access secure storage: {}", msg)
+            }
+            OpenAiApiError::Timeout => {
+                write!(f, "OpenAI API request timed out. Please try again")
+            }
+            OpenAiApiError::Other(msg) => {
+                write!(f, "{}", msg)
+            }
+        }
+    }
+}
+
+impl fmt::Display for PromptError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PromptError::PromptNotFound(name) => {
+                write!(f, "Prompt template '{}' not found. Please check that the prompts directory is properly configured", name)
+            }
+            PromptError::PromptReadError(msg) => {
+                write!(f, "Failed to read prompt template: {}", msg)
+            }
+            PromptError::DirectoryNotFound(path) => {
+                write!(f, "Prompts directory not found at: {}", path)
+            }
+            PromptError::InvalidTemplate(msg) => {
+                write!(f, "Invalid prompt template: {}", msg)
+            }
+        }
+    }
+}
+
 // Implement std::error::Error trait
 impl std::error::Error for BrainDumpError {}
 impl std::error::Error for AudioError {}
 impl std::error::Error for DatabaseError {}
 impl std::error::Error for TranscriptionError {}
 impl std::error::Error for ClaudeApiError {}
+impl std::error::Error for OpenAiApiError {}
+impl std::error::Error for PromptError {}
 
 // Conversions from specific errors to BrainDumpError
 impl From<AudioError> for BrainDumpError {
@@ -272,6 +369,18 @@ impl From<TranscriptionError> for BrainDumpError {
 impl From<ClaudeApiError> for BrainDumpError {
     fn from(err: ClaudeApiError) -> Self {
         BrainDumpError::ClaudeApi(err)
+    }
+}
+
+impl From<OpenAiApiError> for BrainDumpError {
+    fn from(err: OpenAiApiError) -> Self {
+        BrainDumpError::OpenAiApi(err)
+    }
+}
+
+impl From<PromptError> for BrainDumpError {
+    fn from(err: PromptError) -> Self {
+        BrainDumpError::Prompt(err)
     }
 }
 
