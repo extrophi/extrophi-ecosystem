@@ -2,6 +2,13 @@ fn main() {
     // Run Tauri build process to generate capabilities context
     tauri_build::build();
 
+    // Only link whisper.cpp if feature is enabled
+    #[cfg(feature = "whisper")]
+    link_whisper();
+}
+
+#[cfg(feature = "whisper")]
+fn link_whisper() {
     // Platform-specific whisper.cpp linking
     #[cfg(target_os = "macos")]
     {

@@ -9,7 +9,8 @@ use thiserror::Error;
 pub mod manager;
 pub mod types;
 
-// Module 6: C++ FFI Plugin (whisper.cpp wrapper)
+// Module 6: C++ FFI Plugin (whisper.cpp wrapper) - optional
+#[cfg(feature = "whisper")]
 pub mod whisper_cpp;
 
 // Module 7: Candle Plugin (pure Rust ML)

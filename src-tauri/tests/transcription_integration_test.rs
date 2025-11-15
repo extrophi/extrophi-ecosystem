@@ -1,6 +1,8 @@
 //! Integration test for transcription functionality
 //! Tests the full workflow with actual audio files
 
+#![cfg(feature = "whisper")]
+
 use braindump::plugin::{whisper_cpp::WhisperCppPlugin, TranscriptionPlugin, AudioData};
 use hound::WavReader;
 use std::path::Path;

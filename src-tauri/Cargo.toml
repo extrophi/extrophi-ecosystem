@@ -5,6 +5,10 @@ description = "BrainDump Voice Processor V3.0"
 authors = ["IamCodio"]
 edition = "2021"
 
+[features]
+default = ["whisper"]
+whisper = []
+
 [dependencies]
 tauri = { version = "2.9", features = [] }
 serde = { version = "1", features = ["derive"] }

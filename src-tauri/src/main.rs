@@ -217,33 +217,41 @@ fn main() {
 
                 // Register and initialize plugin in background
                 let result: Result<(), String> = (|| {
-                    let mut manager = plugin_manager_clone.lock();
+                    #[cfg(feature = "whisper")]
+                    {
+                        let mut manager = plugin_manager_clone.lock();
 
-                    braindump::logging::info("Plugin", "Registering WhisperCpp plugin");
-                    
-                    // Register C++ FFI plugin
-                    let cpp_plugin = Box::new(plugin::whisper_cpp::WhisperCppPlugin::new(
-                        model_path_clone.to_string_lossy().to_string()
-                    ));
+                        braindump::logging::info("Plugin", "Registering WhisperCpp plugin");
 
-                    if let Err(e) = manager.register(cpp_plugin) {
-                        let err_msg = format!("Failed to register plugin: {}", e);
-                        braindump::logging::error("Plugin", &err_msg);
-                        return Err(err_msg);
-                    }
+                        // Register C++ FFI plugin
+                        let cpp_plugin = Box::new(plugin::whisper_cpp::WhisperCppPlugin::new(
+                            model_path_clone.to_string_lossy().to_string()
+                        ));
 
-                    braindump::logging::info("Plugin", "Initializing plugins");
-                    
-                    // Initialize all plugins
-                    let init_results = manager.initialize_all();
-                    for (name, result) in init_results {
-                        if let Err(e) = result {
-                            let err_msg = format!("Failed to initialize plugin {}: {}", name, e);
+                        if let Err(e) = manager.register(cpp_plugin) {
+                            let err_msg = format!("Failed to register plugin: {}", e);
                             braindump::logging::error("Plugin", &err_msg);
                             return Err(err_msg);
-                        } else {
-                            braindump::logging::info("Plugin", &format!("Plugin '{}' initialized successfully", name));
                         }
+
+                        braindump::logging::info("Plugin", "Initializing plugins");
+
+                        // Initialize all plugins
+                        let init_results = manager.initialize_all();
+                        for (name, result) in init_results {
+                            if let Err(e) = result {
+                                let err_msg = format!("Failed to initialize plugin {}: {}", name, e);
+                                braindump::logging::error("Plugin", &err_msg);
+                                return Err(err_msg);
+                            } else {
+                                braindump::logging::info("Plugin", &format!("Plugin '{}' initialized successfully", name));
+                            }
+                        }
+                    }
+
+                    #[cfg(not(feature = "whisper"))]
+                    {
+                        braindump::logging::info("Plugin", "Whisper support disabled (feature not enabled)");
                     }
 
                     Ok(())
