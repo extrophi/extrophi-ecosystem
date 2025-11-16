@@ -7,8 +7,7 @@ from uuid import uuid4
 
 from pgvector.sqlalchemy import Vector
 from pydantic import BaseModel, Field
-from sqlalchemy import (JSON, Column, DateTime, Enum, ForeignKey, Index,
-                        String, Text)
+from sqlalchemy import JSON, Column, DateTime, Enum, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import declarative_base, relationship
 
