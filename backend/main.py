@@ -1,7 +1,13 @@
+"""FastAPI main application."""
 from fastapi import FastAPI
 
 from backend.api.middleware.cors import setup_cors
-from backend.api.routes import health
+from backend.api.routes import (
+    analyze_router,
+    health_router,
+    query_router,
+    scrape_router,
+)
 
 app = FastAPI(
     title="IAC-032 Unified Scraper",
@@ -10,9 +16,29 @@ app = FastAPI(
 )
 
 setup_cors(app)
-app.include_router(health.router)
+
+# Register all routers
+app.include_router(health_router)
+app.include_router(scrape_router)
+app.include_router(analyze_router)
+app.include_router(query_router)
 
 
 @app.get("/")
 async def root():
     return {"message": "IAC-032 Unified Scraper API", "docs": "/docs"}
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services on startup."""
+    # TODO: Initialize database connection pool
+    # TODO: Verify all services are healthy
+    pass
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown."""
+    # TODO: Close database connections
+    pass
