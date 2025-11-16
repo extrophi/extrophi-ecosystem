@@ -1,4 +1,5 @@
 """Tests for scraper modules."""
+
 from typing import Any
 
 import pytest
@@ -19,9 +20,7 @@ class TestBaseScraper:
         content = UnifiedContent(
             platform="twitter",
             source_url="https://twitter.com/test/status/123",
-            author=AuthorModel(
-                id="test_user", platform="twitter", username="testuser"
-            ),
+            author=AuthorModel(id="test_user", platform="twitter", username="testuser"),
             content=ContentModel(body="Test content", word_count=2),
         )
 
@@ -93,18 +92,11 @@ class TestYouTubeScraper:
 
         # Test various URL formats
         assert scraper._extract_video_id("dQw4w9WgXcQ") == "dQw4w9WgXcQ"
-        assert (
-            scraper._extract_video_id("https://youtube.com/watch?v=dQw4w9WgXcQ")
-            == "dQw4w9WgXcQ"
-        )
-        assert (
-            scraper._extract_video_id("https://youtu.be/dQw4w9WgXcQ") == "dQw4w9WgXcQ"
-        )
+        assert scraper._extract_video_id("https://youtube.com/watch?v=dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+        assert scraper._extract_video_id("https://youtu.be/dQw4w9WgXcQ") == "dQw4w9WgXcQ"
 
     @pytest.mark.asyncio
-    async def test_normalize_transcript(
-        self, sample_youtube_data: dict[str, Any]
-    ) -> None:
+    async def test_normalize_transcript(self, sample_youtube_data: dict[str, Any]) -> None:
         """Test YouTube transcript normalization."""
         from backend.scrapers.adapters.youtube import YouTubeScraper
 

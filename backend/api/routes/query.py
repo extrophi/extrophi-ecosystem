@@ -1,4 +1,5 @@
 """RAG query API endpoints."""
+
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException
@@ -67,15 +68,13 @@ async def rag_query(request: RAGQueryRequest):
                 formatted_results.append(
                     {
                         "content_id": content_id,
-                        "distance": results["distances"][0][i]
-                        if results.get("distances")
-                        else None,
-                        "document": results["documents"][0][i]
-                        if results.get("documents")
-                        else None,
-                        "metadata": results["metadatas"][0][i]
-                        if results.get("metadatas")
-                        else {},
+                        "distance": (
+                            results["distances"][0][i] if results.get("distances") else None
+                        ),
+                        "document": (
+                            results["documents"][0][i] if results.get("documents") else None
+                        ),
+                        "metadata": results["metadatas"][0][i] if results.get("metadatas") else {},
                     }
                 )
 

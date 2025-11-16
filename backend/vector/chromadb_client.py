@@ -1,4 +1,5 @@
 """ChromaDB client for vector storage and retrieval."""
+
 import os
 from typing import Any
 

@@ -1,4 +1,5 @@
 """YouTube scraper implementing BaseScraper interface."""
+
 import os
 import re
 from datetime import datetime

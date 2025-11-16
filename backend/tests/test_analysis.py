@@ -1,4 +1,5 @@
 """Tests for LLM analysis pipeline."""
+
 import json
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -46,9 +47,7 @@ class TestContentAnalyzer:
         }
 
         mock_response = MagicMock()
-        mock_response.choices = [
-            MagicMock(message=MagicMock(content=json.dumps(pattern_result)))
-        ]
+        mock_response.choices = [MagicMock(message=MagicMock(content=json.dumps(pattern_result)))]
         mock_openai.return_value = mock_response
 
         analyzer = ContentAnalyzer()

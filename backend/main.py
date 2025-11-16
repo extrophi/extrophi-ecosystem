@@ -1,4 +1,5 @@
 """FastAPI main application."""
+
 from fastapi import FastAPI
 
 from backend.api.middleware.cors import setup_cors

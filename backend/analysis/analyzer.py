@@ -1,4 +1,5 @@
 """Content analyzer using OpenAI GPT-4."""
+
 import json
 import os
 import re

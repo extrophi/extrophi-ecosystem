@@ -1,4 +1,5 @@
 """Embedding generation using OpenAI."""
+
 import os
 from typing import Any
 
