@@ -2,8 +2,11 @@
   import { invoke } from '@tauri-apps/api/core';
   import SessionsList from './SessionsList.svelte';
   import MessageThread from './MessageThread.svelte';
+  import ErrorBoundary from './ErrorBoundary.svelte';
+  import LoadingState from './LoadingState.svelte';
   import { showError, showSuccess } from '../utils/toast.js';
-  
+  import { retryWithBackoff, isRetryableError } from '../utils/retry.js';
+
   let sessions = $state([]);
   let currentSessionId = $state(null);
   let messages = $state([]);
@@ -11,13 +14,18 @@
   let selectedPrompt = $state('brain_dump');
   let isLoading = $state(false);
   let availablePrompts = $state([]);
-  
+
+  // Loading and error states
+  let loadingState = $state('idle'); // 'idle', 'loading', 'success', 'error'
+  let errorMessage = $state(null);
+  let errorContext = $state('general');
+
   // Load sessions on mount
   $effect(() => {
     loadSessions();
     loadPrompts();
   });
-  
+
   // Load messages when session changes
   $effect(() => {
     if (currentSessionId) {
@@ -26,35 +34,61 @@
       messages = [];
     }
   });
-  
+
   async function loadSessions() {
+    loadingState = 'loading';
+    errorMessage = null;
+
     try {
-      const loadedSessions = await invoke('list_chat_sessions', { limit: 50 });
+      const loadedSessions = await retryWithBackoff(
+        () => invoke('list_chat_sessions', { limit: 50 }),
+        {
+          maxRetries: 2,
+          shouldRetry: isRetryableError,
+          onRetry: (attempt) => {
+            console.log(`Retrying session load, attempt ${attempt}`);
+          }
+        }
+      );
+
       sessions = loadedSessions;
-      
+
       // Select first session if available and no session is currently selected
       if (loadedSessions.length > 0 && !currentSessionId) {
         currentSessionId = loadedSessions[0].id;
       }
+
+      loadingState = 'success';
     } catch (e) {
+      loadingState = 'error';
+      errorMessage = e;
+      errorContext = 'session';
       showError('Failed to load sessions: ' + e);
     }
   }
-  
+
   async function loadMessages(sessionId) {
     try {
-      const loadedMessages = await invoke('get_messages', { sessionId });
+      const loadedMessages = await retryWithBackoff(
+        () => invoke('get_messages', { sessionId }),
+        {
+          maxRetries: 2,
+          shouldRetry: isRetryableError
+        }
+      );
       messages = loadedMessages;
     } catch (e) {
+      errorMessage = e;
+      errorContext = 'session';
       showError('Failed to load messages: ' + e);
     }
   }
-  
+
   async function loadPrompts() {
     try {
       const templates = await invoke('list_prompt_templates');
       availablePrompts = templates.map(t => t.name);
-      
+
       // Set default if available
       const defaultTemplate = templates.find(t => t.is_default);
       if (defaultTemplate) {
@@ -66,18 +100,20 @@
       availablePrompts = ['brain_dump', 'general'];
     }
   }
-  
+
   async function sendMessage() {
     if (!inputMessage.trim()) return;
     if (!currentSessionId) {
       showError('No session selected. Please create a new session.');
       return;
     }
-    
+
     const messageText = inputMessage.trim();
+    const tempInputMessage = inputMessage; // Save for retry
     inputMessage = '';
     isLoading = true;
-    
+    errorMessage = null;
+
     try {
       // Save user message
       const userMsg = await invoke('save_message', {
@@ -86,14 +122,24 @@
         content: messageText,
         recordingId: null
       });
-      
+
       messages = [...messages, userMsg];
-      
-      // Send to Claude
-      const response = await invoke('send_message_to_claude', {
-        message: messageText
-      });
-      
+
+      // Send to AI with retry logic
+      const response = await retryWithBackoff(
+        () => invoke('send_ai_message', {
+          messages: [['user', messageText]],
+          systemPrompt: null
+        }),
+        {
+          maxRetries: 2,
+          shouldRetry: isRetryableError,
+          onRetry: (attempt, delay) => {
+            showError(`Retrying message send (attempt ${attempt})...`);
+          }
+        }
+      );
+
       // Save assistant response
       const assistantMsg = await invoke('save_message', {
         sessionId: currentSessionId,
@@ -101,10 +147,14 @@
         content: response,
         recordingId: null
       });
-      
+
       messages = [...messages, assistantMsg];
       showSuccess('Message sent');
     } catch (e) {
+      // Restore input message for retry
+      inputMessage = tempInputMessage;
+      errorMessage = e;
+      errorContext = 'message';
       showError('Failed to send message: ' + e);
     } finally {
       isLoading = false;
@@ -122,61 +172,84 @@
     // Session already added to list and selected in SessionsList
     messages = [];
   }
+
+  function retryLoadSessions() {
+    loadSessions();
+  }
 </script>
 
 <div class="chat-container">
-  <SessionsList 
-    bind:sessions={sessions}
-    bind:currentSessionId={currentSessionId}
-    onNewSession={handleNewSession}
-  />
-  
-  <div class="chat-main">
-    {#if !currentSessionId}
-      <div class="no-session-state">
-        <div class="no-session-icon">💬</div>
-        <p>No session selected</p>
-        <p class="no-session-hint">Create a new session to start chatting</p>
-      </div>
-    {:else}
-      <MessageThread {messages} {isLoading} />
-      
-      <div class="input-area">
-        <div class="input-controls">
-          <select bind:value={selectedPrompt} class="prompt-select">
-            {#each availablePrompts as prompt}
-              <option value={prompt}>{prompt.replace(/_/g, ' ')}</option>
-            {/each}
-          </select>
-          
-          <textarea 
-            bind:value={inputMessage}
-            onkeydown={handleKeyDown}
-            placeholder="Type your message... (Shift+Enter for new line)"
-            disabled={isLoading}
-            class="message-input"
-            rows="1"
-          />
-          
-          <button 
-            onclick={sendMessage} 
-            disabled={isLoading || !inputMessage.trim()}
-            class="send-btn"
-            aria-label="Send message"
-          >
-            {#if isLoading}
-              <div class="spinner"></div>
-            {:else}
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="22" y1="2" x2="11" y2="13"></line>
-                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-              </svg>
-            {/if}
-          </button>
+  {#if loadingState === 'loading'}
+    <LoadingState message="Loading sessions..." submessage="This should only take a moment" fullScreen={true} />
+  {:else if loadingState === 'error'}
+    <ErrorBoundary
+      bind:error={errorMessage}
+      retry={retryLoadSessions}
+      context={errorContext}
+      fullScreen={true}
+    />
+  {:else}
+    <SessionsList
+      bind:sessions={sessions}
+      bind:currentSessionId={currentSessionId}
+      onNewSession={handleNewSession}
+    />
+
+    <div class="chat-main">
+      {#if !currentSessionId}
+        <div class="no-session-state">
+          <div class="no-session-icon">💬</div>
+          <p>No session selected</p>
+          <p class="no-session-hint">Create a new session to start chatting</p>
         </div>
-      </div>
-    {/if}
-  </div>
+      {:else}
+        {#if errorMessage && errorContext === 'message'}
+          <ErrorBoundary
+            bind:error={errorMessage}
+            retry={sendMessage}
+            context="message"
+          />
+        {/if}
+
+        <MessageThread {messages} {isLoading} />
+
+        <div class="input-area">
+          <div class="input-controls">
+            <select bind:value={selectedPrompt} class="prompt-select">
+              {#each availablePrompts as prompt}
+                <option value={prompt}>{prompt.replace(/_/g, ' ')}</option>
+              {/each}
+            </select>
+
+            <textarea
+              bind:value={inputMessage}
+              onkeydown={handleKeyDown}
+              placeholder="Type your message... (Shift+Enter for new line)"
+              disabled={isLoading}
+              class="message-input"
+              rows="1"
+            />
+
+            <button
+              onclick={sendMessage}
+              disabled={isLoading || !inputMessage.trim()}
+              class="send-btn"
+              aria-label="Send message"
+            >
+              {#if isLoading}
+                <div class="spinner"></div>
+              {:else}
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13"></line>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+              {/if}
+            </button>
+          </div>
+        </div>
+      {/if}
+    </div>
+  {/if}
 </div>
 
 <style>

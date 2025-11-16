@@ -16,6 +16,7 @@ pub mod logging;
 pub mod services;
 pub mod export;
 pub mod prompts;
+pub mod backup;
 
 pub use audio::{Recorder, RecorderError, RecorderResult, WavWriter};
 pub use db::{initialize_db, models, repository, Recording, Repository, Segment, Transcript};

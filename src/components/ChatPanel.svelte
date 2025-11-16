@@ -1,5 +1,7 @@
 <script>
   import { invoke } from '@tauri-apps/api/core';
+  import ErrorBoundary from '../lib/components/ErrorBoundary.svelte';
+  import { retryWithBackoff, isRetryableError } from '../lib/utils/retry.js';
 
   // Use $props() for component props in Svelte 5
   let { messages = $bindable([]), currentSession = $bindable(null), onSendMessage = null } = $props();
@@ -8,6 +10,8 @@
   let isLoading = $state(false);
   let messagesContainer;
   let exportStatus = $state('');
+  let errorMessage = $state(null);
+  let pendingMessage = $state(null);
 
   // Auto-scroll to bottom when new messages arrive
   $effect(() => {
@@ -20,8 +24,10 @@
     if (!inputText.trim() || isLoading || !currentSession) return;
 
     const userMessage = inputText.trim();
+    pendingMessage = userMessage;
     inputText = '';
     isLoading = true;
+    errorMessage = null;
 
     try {
       // Save user message
@@ -34,10 +40,19 @@
 
       messages = [...messages, userMsg];
 
-      // Send to Claude
-      const response = await invoke('send_message_to_claude', {
-        message: userMessage
-      });
+      // Send to Claude with retry logic
+      const response = await retryWithBackoff(
+        () => invoke('send_message_to_claude', {
+          message: userMessage
+        }),
+        {
+          maxRetries: 2,
+          shouldRetry: isRetryableError,
+          onRetry: (attempt) => {
+            console.log(`Retrying message send, attempt ${attempt}`);
+          }
+        }
+      );
 
       // Save Claude's response
       const assistantMsg = await invoke('save_message', {
@@ -52,18 +67,22 @@
       if (onSendMessage) {
         onSendMessage(assistantMsg);
       }
+
+      pendingMessage = null;
     } catch (error) {
       console.error('Failed to send message:', error);
-      // Show error to user
-      const errorMsg = {
-        id: Date.now(),
-        role: 'assistant',
-        content: `Error: ${error}`,
-        created_at: new Date().toISOString()
-      };
-      messages = [...messages, errorMsg];
+      // Restore input for retry
+      inputText = pendingMessage;
+      errorMessage = error;
     } finally {
       isLoading = false;
+    }
+  }
+
+  function retryMessage() {
+    if (pendingMessage) {
+      inputText = pendingMessage;
+      handleSend();
     }
   }
 
@@ -71,6 +90,10 @@
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       handleSend();
+    }
+    else if (event.key === 'Escape') {
+      event.preventDefault();
+      inputText = '';
     }
   }
 
@@ -82,6 +105,12 @@
   async function exportSession() {
     if (!currentSession) {
       exportStatus = 'error:No session selected';
+      setTimeout(() => exportStatus = '', 3000);
+      return;
+    }
+
+    if (messages.length === 0) {
+      exportStatus = 'error:Cannot export empty session';
       setTimeout(() => exportStatus = '', 3000);
       return;
     }
@@ -98,7 +127,19 @@
       setTimeout(() => exportStatus = '', 5000);
     }
   }
+
+  function handleGlobalKeydown(event) {
+    // Cmd+E (Mac) or Ctrl+E (Windows/Linux) for export
+    if ((event.metaKey || event.ctrlKey) && event.key === 'e') {
+      event.preventDefault();
+      if (currentSession && messages.length > 0) {
+        exportSession();
+      }
+    }
+  }
 </script>
+
+<svelte:window onkeydown={handleGlobalKeydown} />
 
 <div class="chat-panel">
   <div class="chat-header">
@@ -109,7 +150,13 @@
           {exportStatus.split(':')[1]}
         </div>
       {/if}
-      <button onclick={exportSession} class="export-btn" disabled={!currentSession || messages.length === 0}>
+      <button
+        onclick={exportSession}
+        class="export-btn"
+        disabled={!currentSession || messages.length === 0}
+        title="Export session to Markdown (Cmd+E or Ctrl+E)"
+        aria-label="Export session to Markdown"
+      >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
           <polyline points="7 10 12 15 17 10"></polyline>
@@ -120,6 +167,14 @@
     </div>
   </div>
   <div class="messages-container" bind:this={messagesContainer}>
+    {#if errorMessage}
+      <ErrorBoundary
+        bind:error={errorMessage}
+        retry={retryMessage}
+        context="message"
+      />
+    {/if}
+
     {#if messages.length === 0}
       <div class="empty-state">
         <div class="empty-icon">💬</div>
@@ -207,31 +262,39 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    background: #007aff;
+    background: linear-gradient(135deg, #007aff 0%, #0056b3 100%);
     color: #ffffff;
     border: none;
     padding: 8px 16px;
     border-radius: 8px;
     cursor: pointer;
     font-size: 0.875rem;
-    font-weight: 500;
+    font-weight: 600;
     transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(0, 122, 255, 0.2);
+    position: relative;
   }
 
   .export-btn:hover:not(:disabled) {
-    background: #0056b3;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+    background: linear-gradient(135deg, #0056b3 0%, #003d82 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 122, 255, 0.4);
   }
 
   .export-btn:active:not(:disabled) {
     transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(0, 122, 255, 0.2);
   }
 
   .export-btn:disabled {
     background: #cccccc;
     cursor: not-allowed;
     opacity: 0.5;
+    box-shadow: none;
+  }
+
+  .export-btn svg {
+    flex-shrink: 0;
   }
 
   .export-toast {

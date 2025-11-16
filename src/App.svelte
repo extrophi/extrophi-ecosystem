@@ -7,8 +7,14 @@
   import SettingsPanel from './components/SettingsPanel.svelte';
   import ChatPanel from './components/ChatPanel.svelte';
   import ChatView from './lib/components/ChatView.svelte';
+  import PromptManager from './lib/components/PromptManager.svelte';
+  import StatsDashboard from './lib/components/StatsDashboard.svelte';
   import ToastContainer from './lib/components/ToastContainer.svelte';
+  import ShortcutsHelp from './lib/components/ShortcutsHelp.svelte';
   import { scanText, highlightMatches } from './lib/privacy_scanner';
+  import { shortcuts, matchesShortcut } from './lib/utils/shortcuts.js';
+  import { setupI18n } from './lib/i18n/index.js';
+  import { isLoading } from 'svelte-i18n';
 
   let isRecording = $state(false);
   let status = $state('Ready');
@@ -37,11 +43,78 @@
 
   // Settings panel state
   let isSettingsOpen = $state(false);
+  let needsApiKeySetup = $state(true); // Track if API keys are configured
 
   // Claude integration state
   let isSendingToClaude = $state(false);
   let claudeError = $state('');
-  let showChatView = $state(true); // Toggle between chat and transcript view
+  let currentView = $state('chat'); // 'chat', 'transcript', 'prompts', or 'stats'
+
+  // Keyboard shortcuts state
+  let showShortcutsHelp = $state(false);
+  let searchInputRef = $state(null);
+
+  // Global error handling
+  let globalError = $state(null);
+  let globalErrorTimeout = $state(null);
+
+  // Listen for custom events from ErrorBoundary
+  $effect(() => {
+    const handleOpenSettings = () => {
+      isSettingsOpen = true;
+    };
+
+    const handleCreateNewSession = () => {
+      createNewSession();
+    };
+
+    window.addEventListener('open-settings', handleOpenSettings);
+    window.addEventListener('create-new-session', handleCreateNewSession);
+
+    return () => {
+      window.removeEventListener('open-settings', handleOpenSettings);
+      window.removeEventListener('create-new-session', handleCreateNewSession);
+    };
+  });
+
+  // Global uncaught error handler
+  function handleGlobalError(event) {
+    console.error('Global error:', event);
+    const errorMessage = event.error?.message || event.message || 'An unexpected error occurred';
+    showGlobalError(errorMessage);
+    // Prevent default browser error handling
+    event.preventDefault();
+  }
+
+  // Global unhandled promise rejection handler
+  function handleUnhandledRejection(event) {
+    console.error('Unhandled promise rejection:', event);
+    const errorMessage = event.reason?.message || event.reason || 'An unexpected error occurred';
+    showGlobalError(errorMessage);
+    // Prevent default browser error handling
+    event.preventDefault();
+  }
+
+  function showGlobalError(message) {
+    globalError = message;
+
+    // Clear existing timeout
+    if (globalErrorTimeout) {
+      clearTimeout(globalErrorTimeout);
+    }
+
+    // Auto-dismiss after 10 seconds
+    globalErrorTimeout = setTimeout(() => {
+      globalError = null;
+    }, 10000);
+  }
+
+  function dismissGlobalError() {
+    if (globalErrorTimeout) {
+      clearTimeout(globalErrorTimeout);
+    }
+    globalError = null;
+  }
 
   let privacyMatches = $derived(scanText(currentTranscript));
   let dangerCount = $derived(privacyMatches.filter(m => m.severity === 'danger').length);
@@ -183,7 +256,7 @@
               await loadSessionMessages(sessionId);
 
               // Switch to chat view to show the new session
-              showChatView = true;
+              currentView = 'chat';
 
               console.log('✅ Auto-switched to new chat session:', newSession);
               status = 'Session created! Ready for chat.';
@@ -333,7 +406,7 @@
       console.log('✅ Claude response saved:', assistantMsg);
 
       // Switch to chat view to show the response
-      showChatView = true;
+      currentView = 'chat';
     } catch (error) {
       const errorMessage = handleError(error);
       claudeError = errorMessage;
@@ -343,7 +416,37 @@
     }
   }
 
+  async function exportCurrentSession() {
+    if (!currentSession || messages.length === 0) return;
+
+    try {
+      const filePath = await invoke('export_session', {
+        sessionId: currentSession.id
+      });
+      status = `Exported to: ${filePath}`;
+      setTimeout(() => {
+        if (status.startsWith('Exported')) status = 'Ready';
+      }, 3000);
+    } catch (error) {
+      const errorMessage = handleError(error);
+      console.error('Export failed:', errorMessage);
+      status = `Export failed: ${errorMessage}`;
+      setTimeout(() => {
+        if (status.startsWith('Export failed')) status = 'Ready';
+      }, 3000);
+    }
+  }
+
   onMount(async () => {
+    // Initialize i18n with user's language preference
+    try {
+      const userLang = await invoke('get_language_preference');
+      setupI18n(userLang);
+    } catch (error) {
+      console.error('Failed to load language preference:', error);
+      setupI18n('en'); // Fallback to English
+    }
+
     // Set up listener for model-loading events
     unlisten = await listen('model-loading', (event) => {
       const payload = event.payload;
@@ -385,6 +488,109 @@
     }
 
     loadHistory();
+
+    // Check if API keys are configured
+    checkApiKeyStatus();
+  });
+
+  async function checkApiKeyStatus() {
+    try {
+      const hasOpenai = await invoke('has_openai_key');
+      const hasClaude = await invoke('has_api_key');
+      needsApiKeySetup = !hasOpenai && !hasClaude;
+    } catch (error) {
+      console.error('Failed to check API key status:', error);
+      needsApiKeySetup = true;
+    }
+  }
+
+  // Keyboard shortcuts handler (merged with global shortcuts)
+  function handleKeydown(e) {
+    // Handle Escape key for closing modals/panels first
+    if (e.key === 'Escape') {
+      if (showShortcutsHelp) {
+        e.preventDefault();
+        showShortcutsHelp = false;
+        return;
+      }
+      if (isSettingsOpen) {
+        e.preventDefault();
+        isSettingsOpen = false;
+        checkApiKeyStatus();
+        return;
+      }
+      if (privacyPanelVisible) {
+        e.preventDefault();
+        privacyPanelVisible = false;
+        return;
+      }
+    }
+
+    // Don't trigger shortcuts when typing in input fields (except help)
+    const target = e.target;
+    const isInputField = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+
+    // Allow Cmd/Ctrl+? even in input fields for help
+    if (matchesShortcut(e, shortcuts.help)) {
+      e.preventDefault();
+      showShortcutsHelp = !showShortcutsHelp;
+      return;
+    }
+
+    // Skip other shortcuts if typing in an input field
+    if (isInputField) return;
+
+    // Global shortcuts
+    if (matchesShortcut(e, shortcuts.record)) {
+      e.preventDefault();
+      if (modelStatus === 'ready') {
+        handleRecord();
+      }
+    }
+    else if (matchesShortcut(e, shortcuts.settings)) {
+      e.preventDefault();
+      isSettingsOpen = true;
+    }
+    else if (matchesShortcut(e, shortcuts.search)) {
+      e.preventDefault();
+      if (searchInputRef) {
+        searchInputRef.focus();
+      }
+    }
+    else if (matchesShortcut(e, shortcuts.export)) {
+      e.preventDefault();
+      if (currentSession && messages.length > 0) {
+        exportCurrentSession();
+      }
+    }
+    else if (matchesShortcut(e, shortcuts.newSession)) {
+      e.preventDefault();
+      createNewSession();
+    }
+    else if (matchesShortcut(e, shortcuts.chatView)) {
+      e.preventDefault();
+      currentView = 'chat';
+    }
+    else if (matchesShortcut(e, shortcuts.transcriptView)) {
+      e.preventDefault();
+      currentView = 'transcript';
+    }
+    else if (matchesShortcut(e, shortcuts.promptsView)) {
+      e.preventDefault();
+      currentView = 'prompts';
+    }
+    else if (matchesShortcut(e, shortcuts.privacyView)) {
+      e.preventDefault();
+      privacyPanelVisible = !privacyPanelVisible;
+    }
+  }
+
+  // Watch for settings panel closing to refresh API key status
+  $effect(() => {
+    if (!isSettingsOpen) {
+      // Delay slightly to ensure settings have been saved
+      setTimeout(checkApiKeyStatus, 100);
+    }
   });
 
   onDestroy(() => {
@@ -398,7 +604,27 @@
   });
 </script>
 
+<!-- Global keyboard shortcuts and error handlers -->
+<svelte:window
+  onkeydown={handleKeydown}
+  onerror={handleGlobalError}
+  onunhandledrejection={handleUnhandledRejection}
+/>
+
 <div class="app-container">
+  <!-- Global Error Toast -->
+  {#if globalError}
+    <div class="global-error-toast" role="alert">
+      <div class="toast-content">
+        <div class="toast-icon">⚠️</div>
+        <div class="toast-message">{globalError}</div>
+      </div>
+      <button class="toast-close" onclick={dismissGlobalError} aria-label="Dismiss error">
+        ✕
+      </button>
+    </div>
+  {/if}
+
   <!-- Loading Overlay -->
   {#if modelStatus === 'loading'}
     <div class="loading-overlay">
@@ -428,13 +654,16 @@
     <aside class="sidebar">
       <div class="sidebar-header">
         <h1 class="app-title">BrainDump</h1>
-        <button class="settings-btn" onclick={() => isSettingsOpen = true} aria-label="Open settings">
+        <button class="settings-btn" onclick={() => isSettingsOpen = true} aria-label="Open settings" title="Settings (⌘,)">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"></circle>
             <path d="M12 1v6m0 6v6m0-12l-5.2 3m10.4 0L12 7m0 10l-5.2-3m10.4 0L12 17"></path>
             <path d="M19.071 4.929A10 10 0 1 1 4.929 19.07 10 10 0 0 1 19.071 4.93z" opacity="0.4"></path>
             <path d="M12 1v6M12 13v6M6.8 7L12 10M17.2 7L12 10M6.8 17L12 14M17.2 17L12 14"></path>
           </svg>
+          {#if needsApiKeySetup}
+            <span class="settings-badge">!</span>
+          {/if}
         </button>
       </div>
 
@@ -457,7 +686,7 @@
       </div>
 
       <div class="search-container">
-        <input type="text" placeholder="Search transcripts..." class="search-input" />
+        <input type="text" placeholder="Search transcripts..." class="search-input" bind:this={searchInputRef} />
       </div>
 
       <div class="transcript-list">
@@ -533,23 +762,52 @@
       <div class="view-tabs">
         <button
           class="tab-btn"
-          class:active={showChatView}
-          onclick={() => showChatView = true}
+          class:active={currentView === 'chat'}
+          onclick={() => currentView = 'chat'}
         >
           💬 Chat ({messages.length})
         </button>
         <button
           class="tab-btn"
-          class:active={!showChatView}
-          onclick={() => showChatView = false}
+          class:active={currentView === 'transcript'}
+          onclick={() => currentView = 'transcript'}
         >
           📝 Transcript
+        </button>
+        <button
+          class="tab-btn"
+          class:active={currentView === 'prompts'}
+          onclick={() => currentView = 'prompts'}
+        >
+          🤖 Prompts
+        </button>
+        <button
+          class="tab-btn"
+          class:active={currentView === 'stats'}
+          onclick={() => currentView = 'stats'}
+        >
+          📊 Statistics
+        </button>
+        <button
+          class="tab-btn settings-tab"
+          class:active={isSettingsOpen}
+          onclick={() => isSettingsOpen = true}
+          title="Settings (⌘,)"
+        >
+          ⚙️ Settings
+          {#if needsApiKeySetup}
+            <span class="settings-badge-inline">!</span>
+          {/if}
         </button>
       </div>
 
       <!-- Chat View -->
-      {#if showChatView}
+      {#if currentView === 'chat'}
         <ChatPanel bind:messages={messages} bind:currentSession={currentSession} />
+      {:else if currentView === 'prompts'}
+        <PromptManager />
+      {:else if currentView === 'stats'}
+        <StatsDashboard />
       {:else}
         <!-- Current Transcript Display -->
         <div class="transcript-display">
@@ -618,6 +876,9 @@
 
   <!-- Toast Notifications -->
   <ToastContainer />
+
+  <!-- Keyboard Shortcuts Help Modal -->
+  <ShortcutsHelp bind:visible={showShortcutsHelp} />
 </div>
 
 <!--
@@ -685,6 +946,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    position: relative;
   }
 
   .settings-btn:hover {
@@ -694,6 +956,50 @@
 
   .settings-btn:active {
     transform: scale(0.95);
+  }
+
+  .settings-badge {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: #ff3b30;
+    color: white;
+    border-radius: 50%;
+    width: 14px;
+    height: 14px;
+    font-size: 10px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid #ffffff;
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.8;
+      transform: scale(1.1);
+    }
+  }
+
+  .settings-badge-inline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    margin-left: 6px;
+    background: #ff3b30;
+    color: white;
+    border-radius: 50%;
+    font-size: 11px;
+    font-weight: 700;
+    animation: pulse 2s ease-in-out infinite;
   }
 
   .search-container {
@@ -1415,5 +1721,80 @@
     color: #c41e3a;
     font-size: 0.9rem;
     line-height: 1.5;
+  }
+
+  /* ==================== Global Error Toast ==================== */
+  .global-error-toast {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    max-width: 500px;
+    background: #fff5f5;
+    border: 1px solid #feb2b2;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(255, 59, 48, 0.2);
+    z-index: 10000;
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    animation: slideInRight 0.3s ease-out;
+  }
+
+  @keyframes slideInRight {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  .global-error-toast .toast-content {
+    flex: 1;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .global-error-toast .toast-icon {
+    font-size: 1.25rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  .global-error-toast .toast-message {
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: #742a2a;
+    word-wrap: break-word;
+  }
+
+  .global-error-toast .toast-close {
+    background: none;
+    border: none;
+    color: #742a2a;
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+  }
+
+  .global-error-toast .toast-close:hover {
+    background: rgba(116, 42, 42, 0.1);
+  }
+
+  .global-error-toast .toast-close:active {
+    transform: scale(0.9);
   }
 </style>

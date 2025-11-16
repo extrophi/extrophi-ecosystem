@@ -362,6 +362,47 @@ fn main() {
             // File-based Prompt Template Commands
             commands::load_prompt,
             commands::list_prompts,
+            // Session Management Commands
+            commands::rename_session,
+            commands::delete_session,
+            // App Settings Commands
+            commands::get_selected_provider,
+            commands::set_selected_provider,
+            // Unified AI Message Command
+            commands::send_ai_message,
+            // User-Created Prompts Management Commands (Issue #3)
+            commands::list_user_prompts,
+            commands::get_user_prompt,
+            commands::create_user_prompt,
+            commands::update_user_prompt,
+            commands::delete_user_prompt,
+            // Usage Statistics Commands (Issue #10)
+            commands::get_usage_stats,
+            commands::track_usage,
+            // Session Tagging System Commands (Issue #13)
+            commands::get_all_tags,
+            commands::create_tag,
+            commands::add_tag_to_session,
+            commands::remove_tag_from_session,
+            commands::get_session_tags,
+            commands::delete_tag,
+            commands::rename_tag,
+            commands::update_tag_color,
+            commands::get_tag_usage_counts,
+            commands::merge_tags,
+            commands::get_sessions_by_tags,
+            // Backup System Commands (Issue #14)
+            commands::create_backup,
+            commands::list_backups,
+            commands::restore_backup,
+            commands::delete_backup,
+            commands::get_backup_settings,
+            commands::update_backup_settings,
+            commands::get_backup_status,
+            commands::list_backup_history,
+            // Language Preference Commands (Issue #12)
+            commands::get_language_preference,
+            commands::set_language_preference,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

@@ -1,6 +1,8 @@
 <script>
   import { invoke } from '@tauri-apps/api/core';
   import { showError, showSuccess } from '../lib/utils/toast.js';
+  import { locale } from 'svelte-i18n';
+  import { languages } from '../lib/i18n/index.js';
 
   let { isOpen = $bindable(false) } = $props();
 
@@ -11,11 +13,34 @@
   let isTestingClaude = $state(false);
   let openaiStatus = $state(null); // 'success' | 'error' | null
   let claudeStatus = $state(null);
+  let selectedLanguage = $state('en'); // Language preference
 
-  // Load existing keys on mount
+  // Load existing keys and selected provider on mount
   $effect(() => {
     checkExistingKeys();
+    loadSelectedProvider();
+    loadLanguagePreference();
   });
+
+  async function loadSelectedProvider() {
+    try {
+      selectedProvider = await invoke('get_selected_provider');
+    } catch (e) {
+      console.error('Failed to load provider:', e);
+      selectedProvider = 'openai'; // fallback
+    }
+  }
+
+  async function loadLanguagePreference() {
+    try {
+      const lang = await invoke('get_language_preference');
+      selectedLanguage = lang;
+      locale.set(lang); // Update i18n locale
+    } catch (e) {
+      console.error('Failed to load language preference:', e);
+      selectedLanguage = 'en'; // fallback to English
+    }
+  }
 
   async function checkExistingKeys() {
     try {
@@ -26,6 +51,25 @@
       if (hasClaude) claudeStatus = 'success';
     } catch (e) {
       console.error('Failed to check keys:', e);
+    }
+  }
+
+  async function handleProviderChange() {
+    try {
+      await invoke('set_selected_provider', { provider: selectedProvider });
+      showSuccess('Provider preference saved');
+    } catch (e) {
+      showError(`Failed to save provider: ${e}`);
+    }
+  }
+
+  async function handleLanguageChange() {
+    try {
+      await invoke('set_language_preference', { language: selectedLanguage });
+      locale.set(selectedLanguage); // Update i18n locale immediately
+      showSuccess('Language changed successfully');
+    } catch (e) {
+      showError(`Failed to save language preference: ${e}`);
     }
   }
 
@@ -141,6 +185,7 @@
               type="radio"
               bind:group={selectedProvider}
               value="openai"
+              onchange={handleProviderChange}
             />
             OpenAI (GPT-4) - $0.15/1M tokens
           </label>
@@ -150,6 +195,7 @@
               type="radio"
               bind:group={selectedProvider}
               value="claude"
+              onchange={handleProviderChange}
             />
             Claude (Anthropic) - $3/1M tokens
           </label>
@@ -221,6 +267,21 @@
           {#if claudeStatus === 'error'}
             <div class="status-message error">⚠ Key invalid or not configured</div>
           {/if}
+        </div>
+      </section>
+
+      <section class="language-section">
+        <h3>Language</h3>
+        <p class="help-text">Select your preferred language</p>
+
+        <div class="language-selector">
+          <select bind:value={selectedLanguage} onchange={handleLanguageChange} class="language-select">
+            {#each languages as lang}
+              <option value={lang.code}>
+                {lang.flag} {lang.nativeName} ({lang.name})
+              </option>
+            {/each}
+          </select>
         </div>
       </section>
 
@@ -473,5 +534,36 @@
     margin: 8px 0;
     font-size: 0.9rem;
     color: #666666;
+  }
+
+  .language-section {
+    margin-bottom: 2rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid #e0e0e0;
+  }
+
+  .language-selector {
+    margin-top: 1rem;
+  }
+
+  .language-select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    background: #ffffff;
+    color: #000000;
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.2s ease;
+  }
+
+  .language-select:focus {
+    border-color: #2196F3;
+  }
+
+  .language-select:hover {
+    border-color: #2196F3;
   }
 </style>
