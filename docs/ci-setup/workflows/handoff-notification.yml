@@ -1,0 +1,180 @@
+name: Handoff Notification
+
+on:
+  push:
+    branches:
+      - 'claude/overnight-chat-integration-*'
+      - 'claude/*'
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+    branches: [main]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  notify-on-push:
+    name: Notify Team on Push
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for handoff docs
+        id: check-docs
+        run: |
+          if [ -f "docs/dev/HANDOFF_TO_WEB_TEAM.md" ]; then
+            echo "handoff_exists=true" >> $GITHUB_OUTPUT
+            echo "Handoff documentation found"
+          else
+            echo "handoff_exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Get commit info
+        id: commit
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          BRANCH_NAME=${GITHUB_REF#refs/heads/}
+
+          echo "message<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMIT_MSG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
+          echo "branch=$BRANCH_NAME" >> $GITHUB_OUTPUT
+
+      - name: Check for existing notification issue
+        id: existing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ISSUE_NUM=$(gh issue list \
+            --label "handoff-notification" \
+            --state open \
+            --search "Handoff Ready" \
+            --json number \
+            --jq '.[0].number // ""')
+
+          if [ -n "$ISSUE_NUM" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "number=$ISSUE_NUM" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update existing notification
+        if: steps.existing.outputs.exists == 'true' && steps.check-docs.outputs.handoff_exists == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue comment ${{ steps.existing.outputs.number }} --body "## 🔄 Update: New commits pushed
+
+          **Branch**: \`${{ steps.commit.outputs.branch }}\`
+          **Latest Commit**: ${{ steps.commit.outputs.sha }}
+          **Pushed**: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          **Actor**: @${{ github.actor }}
+
+          ### Latest Changes
+          \`\`\`
+          ${{ steps.commit.outputs.message }}
+          \`\`\`
+
+          ### Next Steps
+          1. Pull latest changes: \`git pull origin ${{ steps.commit.outputs.branch }}\`
+          2. Review updated documentation in \`docs/dev/\`
+          3. Check CI status: [View workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          ---
+          🤖 Automated notification - [View commit](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})"
+
+      - name: Create new notification issue
+        if: steps.existing.outputs.exists == 'false' && steps.check-docs.outputs.handoff_exists == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "🚀 Handoff Ready: BrainDump v3.0 - Web Team Action Required" \
+            --label "handoff-notification,P1-critical" \
+            --body "## Handoff Ready for Web Claude Team
+
+          Local Claude Code has pushed updates to the handoff branch.
+
+          **Branch**: \`${{ steps.commit.outputs.branch }}\`
+          **Latest Commit**: ${{ steps.commit.outputs.sha }}
+          **Status**: ✅ Ready for web team pickup
+
+          ### 📋 Documentation Available
+          - \`docs/dev/HANDOFF_TO_WEB_TEAM.md\` - Complete handoff guide
+          - \`docs/dev/PROJECT_STATUS_2025-11-16.md\` - Current state
+          - \`docs/dev/GITHUB_ISSUES_FOR_WEB_TEAM.md\` - 14 issues to implement
+          - \`docs/dev/GITHUB_ACTIONS_RESEARCH_2025.md\` - CI/CD automation guide
+          - \`CLAUDE.md\` - Architecture and debugging reference
+
+          ### 🎯 Immediate Actions for Web Team
+          1. **Review handoff docs** (15 min read)
+          2. **Run automated issue creation** workflow (5 min)
+          3. **Implement P1 features** (32 hours estimated)
+          4. **Set up automation** (12-17 hours for full CI/CD)
+
+          ### 📊 Quick Stats
+          - **Feature Completion**: 60% (MVP functional)
+          - **Missing Features**: 14 (fully documented)
+          - **Time to v1.0**: ~78 hours (P1 + P2)
+          - **CI Status**: [View latest run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          ### 🔗 Links
+          - [View branch](${{ github.server_url }}/${{ github.repository }}/tree/${{ steps.commit.outputs.branch }})
+          - [Latest commit](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
+          - [CI/CD status](${{ github.server_url }}/${{ github.repository }}/actions)
+
+          ### 📞 Communication
+          This issue will auto-update when new commits are pushed. Comment here for coordination.
+
+          ---
+          🤖 Automated handoff notification
+          **Next update**: When new commits pushed to \`${{ steps.commit.outputs.branch }}\`"
+
+  notify-on-pr:
+    name: Notify Team on PR
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add PR comment with handoff info
+        if: github.event.pull_request.draft == false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --body "## 🤖 Handoff Documentation Available
+
+          This PR includes comprehensive handoff documentation for the web team:
+
+          ### 📚 Key Documents
+          - \`docs/dev/HANDOFF_TO_WEB_TEAM.md\` - Complete handoff guide
+          - \`docs/dev/PROJECT_STATUS_2025-11-16.md\` - Current state & feature matrix
+          - \`docs/dev/GITHUB_ISSUES_FOR_WEB_TEAM.md\` - 14 detailed issues
+          - \`docs/dev/GITHUB_ACTIONS_RESEARCH_2025.md\` - CI/CD & automation guide
+
+          ### ✅ Pre-merge Checklist
+          - [ ] All CI checks passing
+          - [ ] Documentation reviewed
+          - [ ] Handoff requirements validated
+          - [ ] Web team ready to receive
+
+          ### 🎯 Post-merge Actions
+          1. Web team reviews handoff documentation
+          2. Automated issue creation workflow runs
+          3. Implementation begins on P1 features
+
+          CI Status: [View checks](${{ github.server_url }}/${{ github.repository }}/pull/${{ github.event.pull_request.number }}/checks)"
+
+      - name: Add labels to PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr edit ${{ github.event.pull_request.number }} \
+            --add-label "handoff,documentation,ready-for-review"
