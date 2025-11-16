@@ -4,12 +4,11 @@ import os
 from typing import Generator
 
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import QueuePool
 
 DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://scraper:scraper_pass@postgres:5432/unified_scraper"
+    "DATABASE_URL", "postgresql://scraper:scraper_pass@postgres:5432/unified_scraper"
 )
 
 

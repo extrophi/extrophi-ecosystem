@@ -1,15 +1,16 @@
 """SQLAlchemy ORM models and Pydantic schemas"""
 
+import enum
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from sqlalchemy import Column, String, Text, DateTime, JSON, ForeignKey, Index, Enum
-from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import declarative_base, relationship
 from pgvector.sqlalchemy import Vector
 from pydantic import BaseModel, Field
-import enum
+from sqlalchemy import (JSON, Column, DateTime, Enum, ForeignKey, Index,
+                        String, Text)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
 
@@ -18,8 +19,10 @@ Base = declarative_base()
 # SQLAlchemy ORM Models
 # ============================================================================
 
+
 class ContentORM(Base):
     """ORM model for unified content across all platforms"""
+
     __tablename__ = "contents"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -52,9 +55,14 @@ class ContentORM(Base):
 
     # Indices for performance
     __table_args__ = (
-        Index('idx_platform_author', 'platform', 'author_id'),
-        Index('idx_platform_published', 'platform', 'published_at'),
-        Index('idx_embedding_ivfflat', 'embedding', postgresql_using='ivfflat', postgresql_with={'op_class': 'vector_cosine_ops'}),
+        Index("idx_platform_author", "platform", "author_id"),
+        Index("idx_platform_published", "platform", "published_at"),
+        Index(
+            "idx_embedding_ivfflat",
+            "embedding",
+            postgresql_using="ivfflat",
+            postgresql_with={"op_class": "vector_cosine_ops"},
+        ),
     )
 
     def __repr__(self):
@@ -63,6 +71,7 @@ class ContentORM(Base):
 
 class AuthorORM(Base):
     """ORM model for content authors/creators"""
+
     __tablename__ = "authors"
 
     id = Column(String(255), primary_key=True)  # platform_username or user_id
@@ -92,8 +101,8 @@ class AuthorORM(Base):
     contents = relationship("ContentORM", back_populates="author", cascade="all, delete-orphan")
 
     __table_args__ = (
-        Index('idx_platform_username', 'platform', 'username'),
-        Index('idx_authority_score', 'authority_score'),
+        Index("idx_platform_username", "platform", "username"),
+        Index("idx_authority_score", "authority_score"),
     )
 
     def __repr__(self):
@@ -102,6 +111,7 @@ class AuthorORM(Base):
 
 class PatternORM(Base):
     """ORM model for detected cross-platform patterns"""
+
     __tablename__ = "patterns"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -120,9 +130,7 @@ class PatternORM(Base):
 
     discovered_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-    __table_args__ = (
-        Index('idx_author_pattern_type', 'author_id', 'pattern_type'),
-    )
+    __table_args__ = (Index("idx_author_pattern_type", "author_id", "pattern_type"),)
 
     def __repr__(self):
         return f"<PatternORM(id={self.id}, pattern_type={self.pattern_type})>"
@@ -130,6 +138,7 @@ class PatternORM(Base):
 
 class ResearchSessionORM(Base):
     """ORM model for tracking research sessions and queries"""
+
     __tablename__ = "research_sessions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -156,8 +165,8 @@ class ResearchSessionORM(Base):
     completed_at = Column(DateTime, nullable=True)
 
     __table_args__ = (
-        Index('idx_session_status', 'status'),
-        Index('idx_session_created', 'created_at'),
+        Index("idx_session_status", "status"),
+        Index("idx_session_created", "created_at"),
     )
 
     def __repr__(self):
@@ -168,8 +177,10 @@ class ResearchSessionORM(Base):
 # Pydantic v2 Schemas
 # ============================================================================
 
+
 class AuthorModel(BaseModel):
     """Pydantic model for author information"""
+
     id: str
     platform: str
     username: str
@@ -189,6 +200,7 @@ class AuthorModel(BaseModel):
 
 class ContentModel(BaseModel):
     """Pydantic model for content itself"""
+
     title: Optional[str] = None
     body: str
     published_at: Optional[datetime] = None
@@ -198,6 +210,7 @@ class ContentModel(BaseModel):
 
 class MetricsModel(BaseModel):
     """Pydantic model for engagement metrics"""
+
     likes: Optional[int] = None
     retweets: Optional[int] = None
     replies: Optional[int] = None
@@ -211,6 +224,7 @@ class MetricsModel(BaseModel):
 
 class AnalysisModel(BaseModel):
     """Pydantic model for LLM analysis results"""
+
     frameworks: List[str] = Field(default_factory=list)  # AIDA, PAS, BAB, PASTOR, etc.
     hooks: List[str] = Field(default_factory=list)  # Hook types found
     themes: List[str] = Field(default_factory=list)  # Main themes/topics
@@ -226,6 +240,7 @@ class AnalysisModel(BaseModel):
 
 class UnifiedContent(BaseModel):
     """Complete unified content model for all platforms"""
+
     id: str = Field(default_factory=lambda: str(uuid4()))
     platform: str  # twitter, youtube, reddit, amazon, web
     source_url: str
@@ -245,6 +260,7 @@ class UnifiedContent(BaseModel):
 
 class PatternModel(BaseModel):
     """Model for detected patterns"""
+
     id: str = Field(default_factory=lambda: str(uuid4()))
     author_id: str
     pattern_type: str  # elaboration, theme, hook, framework
@@ -260,6 +276,7 @@ class PatternModel(BaseModel):
 
 class ResearchSessionModel(BaseModel):
     """Model for research sessions"""
+
     id: str = Field(default_factory=lambda: str(uuid4()))
     session_name: str
     project_brief: Optional[str] = None

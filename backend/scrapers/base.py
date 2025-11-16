@@ -1,12 +1,14 @@
-from abc import ABC, abstractmethod
-from typing import Any
 import uuid
+from abc import ABC, abstractmethod
 from datetime import datetime
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
 class MetricsModel(BaseModel):
     """Engagement metrics for content across platforms."""
+
     likes: int = 0
     views: int = 0
     comments: int = 0
@@ -16,6 +18,7 @@ class MetricsModel(BaseModel):
 
 class AnalysisModel(BaseModel):
     """LLM-generated analysis of content."""
+
     frameworks: list[str] = Field(default_factory=list)
     hooks: list[str] = Field(default_factory=list)
     themes: list[str] = Field(default_factory=list)
@@ -25,6 +28,7 @@ class AnalysisModel(BaseModel):
 
 class AuthorModel(BaseModel):
     """Content author/creator metadata."""
+
     id: str
     platform: str
     username: str
@@ -33,6 +37,7 @@ class AuthorModel(BaseModel):
 
 class ContentModel(BaseModel):
     """Core content payload."""
+
     title: str | None = None
     body: str
     word_count: int = 0
@@ -40,6 +45,7 @@ class ContentModel(BaseModel):
 
 class UnifiedContent(BaseModel):
     """Universal content schema for multi-platform scraping."""
+
     content_id: uuid.UUID = Field(default_factory=uuid.uuid4)
     platform: str
     source_url: str

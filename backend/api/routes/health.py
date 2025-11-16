@@ -1,7 +1,9 @@
-from fastapi import APIRouter
 import os
 
+from fastapi import APIRouter
+
 router = APIRouter()
+
 
 @router.get("/health")
 async def health_check():
@@ -10,6 +12,6 @@ async def health_check():
         "services": {
             "database": os.getenv("DATABASE_URL", "not configured"),
             "redis": os.getenv("REDIS_URL", "not configured"),
-            "chromadb": f"{os.getenv('CHROMA_HOST', 'chromadb')}:{os.getenv('CHROMA_PORT', '8000')}"
-        }
+            "chromadb": f"{os.getenv('CHROMA_HOST', 'chromadb')}:{os.getenv('CHROMA_PORT', '8000')}",
+        },
     }
