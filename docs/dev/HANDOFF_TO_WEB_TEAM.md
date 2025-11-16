@@ -21,7 +21,8 @@ BrainDump v3.0 MVP is **60% feature-complete**. Build works, core features work,
 ### Documentation (All in `docs/dev/`)
 1. **PROJECT_STATUS_2025-11-16.md** - Current state, what works, what doesn't
 2. **GITHUB_ISSUES_FOR_WEB_TEAM.md** - 14 detailed issues to create and implement
-3. **This file** - Your instructions
+3. **GITHUB_ACTIONS_RESEARCH_2025.md** - Complete CI/CD & automation guide (NEW!)
+4. **This file** - Your instructions
 
 ### Code Changes Ready to Merge
 - Branch: `claude/overnight-chat-integration-01Bw9rfUA3zLZKNsfbNZdh54`
@@ -32,17 +33,27 @@ BrainDump v3.0 MVP is **60% feature-complete**. Build works, core features work,
 
 ## 🎯 YOUR IMMEDIATE TASKS
 
-### Task 1: Create GitHub Issues (30 minutes)
-Copy each issue from `GITHUB_ISSUES_FOR_WEB_TEAM.md` into GitHub:
-```bash
-# Open the file
-cat docs/dev/GITHUB_ISSUES_FOR_WEB_TEAM.md
+### Task 1: Create GitHub Issues (5 minutes - AUTOMATED!)
+**RECOMMENDED**: Use the automated workflow instead of manual creation:
 
-# Create 14 issues with:
+```bash
+# Option 1: Use the automated workflow (FAST!)
+# See: docs/dev/GITHUB_ACTIONS_RESEARCH_2025.md - Example 1
+
+# Option 2: Manual creation (if needed)
+cat docs/dev/GITHUB_ISSUES_FOR_WEB_TEAM.md
+# Then create 14 issues with:
 # - Proper labels (P1-critical, P2-high, etc.)
 # - Estimated effort in issue description
 # - Link to relevant code sections
 ```
+
+**PRO TIP**: See `GITHUB_ACTIONS_RESEARCH_2025.md` for complete automation guide including:
+- Automated issue creation workflow
+- AI-powered issue triage and labeling
+- Autonomous project board management
+- GitHub Models integration (40+ LLMs)
+- Release automation
 
 ### Task 2: Implement P1 Critical Features (32 hours)
 **Must complete before v1.0 release:**

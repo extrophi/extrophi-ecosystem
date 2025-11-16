@@ -11,13 +11,11 @@ dist/
 *.app
 
 # Strategic planning & PM docs (IP protection)
-docs/
+# NOTE: docs/ now included in repo for team collaboration (private repo)
 pm_docs/
 APPROVAL-*.md
 DESIGN-*.md
 PRD-*.md
-*HANDOFF*.md
-*INTEGRATION*.md
 
 # Test data & outputs (user privacy)
 test-recordings/
