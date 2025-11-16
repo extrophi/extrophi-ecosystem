@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use crate::error::BrainDumpError;
 use crate::db::models::{ChatSession, Message};
-use chrono::{DateTime, Local, Utc};
+use chrono::Local;
 
 /// Export a chat session to markdown
 pub fn export_session_to_markdown(

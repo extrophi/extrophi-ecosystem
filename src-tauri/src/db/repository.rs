@@ -2,13 +2,13 @@
 
 use super::models::*;
 use chrono::Utc;
-use rusqlite::{Connection, Result as SqliteResult, params};
+use rusqlite::{Connection, Result as SqliteResult, params, OptionalExtension};
 
 // Import usage statistics models
 use super::models::{UsageEvent, UsageStats, ProviderUsage, PromptUsage};
 
 // Import tagging models
-use super::models::{Tag, SessionTag};
+use super::models::Tag;
 
 pub struct Repository {
     conn: Connection,
@@ -688,43 +688,27 @@ impl Repository {
 
         let mut stmt = self.conn.prepare(&query)?;
 
-        let sessions = if mode == "all" {
-            // Bind tag count and limit, then tag IDs
-            let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![
-                Box::new(tag_ids.len() as i64),
-            ];
-            for tag_id in tag_ids {
-                params_vec.push(Box::new(*tag_id));
-            }
-            params_vec.push(Box::new(limit as i64));
+        // Build parameters based on mode
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![];
+        if mode == "all" {
+            params_vec.push(Box::new(tag_ids.len() as i64));
+        }
+        for tag_id in tag_ids {
+            params_vec.push(Box::new(*tag_id));
+        }
+        params_vec.push(Box::new(limit as i64));
 
-            let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
-            stmt.query_map(&*params_refs, |row| {
-                Ok(ChatSession {
-                    id: Some(row.get(0)?),
-                    title: row.get(1)?,
-                    created_at: row.get::<_, String>(2)?.parse().unwrap_or(Utc::now()),
-                    updated_at: row.get::<_, String>(3)?.parse().unwrap_or(Utc::now()),
-                })
-            })?
-        } else {
-            // Bind tag IDs and limit
-            let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![];
-            for tag_id in tag_ids {
-                params_vec.push(Box::new(*tag_id));
-            }
-            params_vec.push(Box::new(limit as i64));
+        let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
 
-            let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
-            stmt.query_map(&*params_refs, |row| {
-                Ok(ChatSession {
-                    id: Some(row.get(0)?),
-                    title: row.get(1)?,
-                    created_at: row.get::<_, String>(2)?.parse().unwrap_or(Utc::now()),
-                    updated_at: row.get::<_, String>(3)?.parse().unwrap_or(Utc::now()),
-                })
-            })?
-        };
+        // Single query_map call to avoid closure type mismatch
+        let sessions = stmt.query_map(&*params_refs, |row| {
+            Ok(ChatSession {
+                id: Some(row.get(0)?),
+                title: row.get(1)?,
+                created_at: row.get::<_, String>(2)?.parse().unwrap_or(Utc::now()),
+                updated_at: row.get::<_, String>(3)?.parse().unwrap_or(Utc::now()),
+            })
+        })?;
 
         sessions.collect()
     }
