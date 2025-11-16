@@ -1,10 +1,12 @@
 // Prevents additional console window on Windows in release builds
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use braindump::{AppState, audio, db, plugin, AudioCommand, AudioResponse, ClaudeClient, OpenAiClient};
-use std::sync::{Arc, mpsc};
-use std::thread;
+use braindump::{
+    audio, db, plugin, AppState, AudioCommand, AudioResponse, ClaudeClient, OpenAiClient,
+};
 use parking_lot::Mutex;
+use std::sync::{mpsc, Arc};
+use std::thread;
 use tauri::Emitter;
 
 mod commands;
@@ -18,9 +20,15 @@ fn import_env_keys_to_keychain() {
             braindump::logging::info("Keychain", "Importing OpenAI API key from .env");
             if let Ok(entry) = Entry::new("braindump", "openai_api_key") {
                 if let Err(e) = entry.set_password(&openai_key) {
-                    braindump::logging::error("Keychain", &format!("Failed to store OpenAI key: {}", e));
+                    braindump::logging::error(
+                        "Keychain",
+                        &format!("Failed to store OpenAI key: {}", e),
+                    );
                 } else {
-                    braindump::logging::info("Keychain", "OpenAI API key stored in keychain successfully");
+                    braindump::logging::info(
+                        "Keychain",
+                        "OpenAI API key stored in keychain successfully",
+                    );
                 }
             }
         }
@@ -32,9 +40,15 @@ fn import_env_keys_to_keychain() {
             braindump::logging::info("Keychain", "Importing Claude API key from .env");
             if let Ok(entry) = Entry::new("braindump", "claude_api_key") {
                 if let Err(e) = entry.set_password(&claude_key) {
-                    braindump::logging::error("Keychain", &format!("Failed to store Claude key: {}", e));
+                    braindump::logging::error(
+                        "Keychain",
+                        &format!("Failed to store Claude key: {}", e),
+                    );
                 } else {
-                    braindump::logging::info("Keychain", "Claude API key stored in keychain successfully");
+                    braindump::logging::info(
+                        "Keychain",
+                        "Claude API key stored in keychain successfully",
+                    );
                 }
             }
         }
@@ -59,12 +73,18 @@ fn main() {
     eprintln!("=== LOGGER INITIALIZED ===");
 
     braindump::logging::info("Startup", "BrainDump v3.0.0 initializing");
-    braindump::logging::info("Startup", &format!("Current directory: {:?}", std::env::current_dir()));
-    braindump::logging::info("Startup", &format!("Executable path: {:?}", std::env::current_exe()));
+    braindump::logging::info(
+        "Startup",
+        &format!("Current directory: {:?}", std::env::current_dir()),
+    );
+    braindump::logging::info(
+        "Startup",
+        &format!("Executable path: {:?}", std::env::current_exe()),
+    );
 
     // Auto-import API keys from .env to keychain on first run
     import_env_keys_to_keychain();
-    
+
     let db_path = dirs::home_dir()
         .unwrap_or_else(|| {
             eprintln!("No home directory found, using current directory");
@@ -81,7 +101,10 @@ fn main() {
             // Continue - might work later
         }
     }
-    braindump::logging::info("Database", &format!("Opening database at: {}", db_path.display()));
+    braindump::logging::info(
+        "Database",
+        &format!("Opening database at: {}", db_path.display()),
+    );
 
     let conn = match db::initialize_db(db_path.clone()) {
         Ok(c) => {
@@ -95,11 +118,11 @@ fn main() {
     };
 
     let repository = Arc::new(Mutex::new(db::Repository::new(conn)));
-    
+
     // Initialize plugin manager
     braindump::logging::info("Plugin", "Initializing plugin manager");
     let plugin_manager = plugin::manager::PluginManager::new();
-    
+
     // Determine model path (absolute path for Tauri)
     let model_path = if cfg!(debug_assertions) {
         // Development mode: use project root
@@ -125,16 +148,25 @@ fn main() {
 
     braindump::logging::info("Model", &format!("Model path: {}", model_path.display()));
     braindump::logging::info("Model", &format!("Model exists: {}", model_path.exists()));
-    
+
     if !model_path.exists() {
-        braindump::logging::error("Model", &format!("Model file NOT FOUND at: {}", model_path.display()));
+        braindump::logging::error(
+            "Model",
+            &format!("Model file NOT FOUND at: {}", model_path.display()),
+        );
     } else {
         if let Ok(metadata) = std::fs::metadata(&model_path) {
-            braindump::logging::info("Model", &format!("Model file size: {} MB", metadata.len() / 1_048_576));
+            braindump::logging::info(
+                "Model",
+                &format!("Model file size: {} MB", metadata.len() / 1_048_576),
+            );
         }
     }
 
-    println!("Whisper model will be loaded in background from: {}", model_path.display());
+    println!(
+        "Whisper model will be loaded in background from: {}",
+        model_path.display()
+    );
 
     let plugin_manager = Arc::new(Mutex::new(plugin_manager));
 
@@ -150,10 +182,11 @@ fn main() {
             match cmd {
                 AudioCommand::StartRecording => {
                     braindump::logging::info("Audio", "StartRecording command received");
-                    
+
                     if recorder.is_some() {
                         braindump::logging::warn("Audio", "Recording already in progress");
-                        let _ = response_tx.send(AudioResponse::Error("Already recording".to_string()));
+                        let _ =
+                            response_tx.send(AudioResponse::Error("Already recording".to_string()));
                         continue;
                     }
 
@@ -161,7 +194,10 @@ fn main() {
                         Ok(mut rec) => {
                             braindump::logging::info("Audio", "Recorder created, starting capture");
                             if let Err(e) = rec.start() {
-                                braindump::logging::error("Audio", &format!("Failed to start recording: {}", e));
+                                braindump::logging::error(
+                                    "Audio",
+                                    &format!("Failed to start recording: {}", e),
+                                );
                                 let _ = response_tx.send(AudioResponse::Error(e.to_string()));
                             } else {
                                 braindump::logging::info("Audio", "Recording started successfully");
@@ -170,26 +206,39 @@ fn main() {
                             }
                         }
                         Err(e) => {
-                            braindump::logging::error("Audio", &format!("Failed to create recorder: {}", e));
+                            braindump::logging::error(
+                                "Audio",
+                                &format!("Failed to create recorder: {}", e),
+                            );
                             let _ = response_tx.send(AudioResponse::Error(e.to_string()));
                         }
                     }
                 }
                 AudioCommand::StopRecording => {
                     braindump::logging::info("Audio", "StopRecording command received");
-                    
+
                     if let Some(mut rec) = recorder.take() {
                         match rec.stop() {
                             Ok(samples) => {
                                 let sample_rate = rec.sample_rate();
-                                braindump::logging::info("Audio", &format!("Recording stopped: {} samples at {}Hz", samples.len(), sample_rate));
+                                braindump::logging::info(
+                                    "Audio",
+                                    &format!(
+                                        "Recording stopped: {} samples at {}Hz",
+                                        samples.len(),
+                                        sample_rate
+                                    ),
+                                );
                                 let _ = response_tx.send(AudioResponse::RecordingStopped {
                                     samples,
-                                    sample_rate
+                                    sample_rate,
                                 });
                             }
                             Err(e) => {
-                                braindump::logging::error("Audio", &format!("Failed to stop recording: {}", e));
+                                braindump::logging::error(
+                                    "Audio",
+                                    &format!("Failed to stop recording: {}", e),
+                                );
                                 let _ = response_tx.send(AudioResponse::Error(e.to_string()));
                             }
                         }
@@ -240,7 +289,7 @@ fn main() {
         .manage(app_state)
         .setup(move |app| {
             braindump::logging::info("Tauri", "Tauri setup() called");
-            
+
             let app_handle = app.handle().clone();
             let plugin_manager_clone = plugin_manager_for_init;
             let model_path_clone = model_path_for_init;
@@ -248,14 +297,14 @@ fn main() {
             // Spawn background task for plugin initialization
             tauri::async_runtime::spawn(async move {
                 braindump::logging::info("Plugin", "Starting background model loading");
-                
+
                 // Emit loading status
                 let _ = app_handle.emit(
                     "model-loading",
                     serde_json::json!({
                         "status": "loading",
                         "message": "Initializing Whisper model..."
-                    })
+                    }),
                 );
 
                 // Register and initialize plugin in background
@@ -268,7 +317,7 @@ fn main() {
 
                         // Register C++ FFI plugin
                         let cpp_plugin = Box::new(plugin::whisper_cpp::WhisperCppPlugin::new(
-                            model_path_clone.to_string_lossy().to_string()
+                            model_path_clone.to_string_lossy().to_string(),
                         ));
 
                         if let Err(e) = manager.register(cpp_plugin) {
@@ -283,18 +332,25 @@ fn main() {
                         let init_results = manager.initialize_all();
                         for (name, result) in init_results {
                             if let Err(e) = result {
-                                let err_msg = format!("Failed to initialize plugin {}: {}", name, e);
+                                let err_msg =
+                                    format!("Failed to initialize plugin {}: {}", name, e);
                                 braindump::logging::error("Plugin", &err_msg);
                                 return Err(err_msg);
                             } else {
-                                braindump::logging::info("Plugin", &format!("Plugin '{}' initialized successfully", name));
+                                braindump::logging::info(
+                                    "Plugin",
+                                    &format!("Plugin '{}' initialized successfully", name),
+                                );
                             }
                         }
                     }
 
                     #[cfg(not(feature = "whisper"))]
                     {
-                        braindump::logging::info("Plugin", "Whisper support disabled (feature not enabled)");
+                        braindump::logging::info(
+                            "Plugin",
+                            "Whisper support disabled (feature not enabled)",
+                        );
                     }
 
                     Ok(())
@@ -310,18 +366,21 @@ fn main() {
                             serde_json::json!({
                                 "status": "ready",
                                 "message": "Model loaded successfully"
-                            })
+                            }),
                         );
                     }
                     Err(e) => {
-                        braindump::logging::critical("Plugin", &format!("Failed to load model: {}", e));
+                        braindump::logging::critical(
+                            "Plugin",
+                            &format!("Failed to load model: {}", e),
+                        );
                         eprintln!("Failed to load model: {}", e);
                         let _ = app_handle.emit(
                             "model-loading",
                             serde_json::json!({
                                 "status": "error",
                                 "message": e
-                            })
+                            }),
                         );
                     }
                 }
@@ -409,6 +468,6 @@ fn main() {
             braindump::logging::critical("Tauri", &format!("Failed to run application: {}", e));
             eprintln!("Error while running Tauri application: {}", e);
         });
-    
+
     braindump::logging::info("Shutdown", "Application exiting");
 }

@@ -1,6 +1,6 @@
 // src-tauri/src/error.rs
-use std::fmt;
 use serde::Serialize;
+use std::fmt;
 
 /// Main error type for BrainDump
 /// All errors in the app use this type
@@ -168,7 +168,10 @@ impl fmt::Display for AudioError {
                 write!(f, "Microphone permission denied. Please grant access in System Settings → Privacy & Security → Microphone")
             }
             AudioError::NoDeviceFound => {
-                write!(f, "No microphone found. Please connect a microphone and try again")
+                write!(
+                    f,
+                    "No microphone found. Please connect a microphone and try again"
+                )
             }
             AudioError::DeviceInitFailed(msg) => {
                 write!(f, "Failed to initialize microphone: {}", msg)
@@ -183,10 +186,16 @@ impl fmt::Display for AudioError {
                 write!(f, "Recording failed: {}", msg)
             }
             AudioError::BufferOverflow => {
-                write!(f, "Audio buffer overflow. Try reducing system load and try again")
+                write!(
+                    f,
+                    "Audio buffer overflow. Try reducing system load and try again"
+                )
             }
             AudioError::StreamDisconnected => {
-                write!(f, "Audio device disconnected. Please reconnect your microphone and try again")
+                write!(
+                    f,
+                    "Audio device disconnected. Please reconnect your microphone and try again"
+                )
             }
         }
     }
@@ -199,7 +208,10 @@ impl fmt::Display for DatabaseError {
                 write!(f, "Failed to open database: {}", msg)
             }
             DatabaseError::Corrupted => {
-                write!(f, "Database file is corrupted. You may need to reset the app")
+                write!(
+                    f,
+                    "Database file is corrupted. You may need to reset the app"
+                )
             }
             DatabaseError::WriteFailed(msg) => {
                 write!(f, "Failed to save to database: {}", msg)
@@ -208,13 +220,23 @@ impl fmt::Display for DatabaseError {
                 write!(f, "Failed to read from database: {}", msg)
             }
             DatabaseError::Locked => {
-                write!(f, "Database is locked. Close other BrainDump instances and try again")
+                write!(
+                    f,
+                    "Database is locked. Close other BrainDump instances and try again"
+                )
             }
             DatabaseError::InsufficientDiskSpace => {
-                write!(f, "Not enough disk space. Please free up at least 100MB and try again")
+                write!(
+                    f,
+                    "Not enough disk space. Please free up at least 100MB and try again"
+                )
             }
             DatabaseError::TransactionFailed(msg) => {
-                write!(f, "Database transaction failed: {}. Your data is safe, please try again", msg)
+                write!(
+                    f,
+                    "Database transaction failed: {}. Your data is safe, please try again",
+                    msg
+                )
             }
         }
     }
@@ -245,7 +267,10 @@ impl fmt::Display for TranscriptionError {
                 write!(f, "No speech detected. Please speak clearly and try again")
             }
             TranscriptionError::MetalGPUFailed => {
-                write!(f, "GPU acceleration failed, using CPU instead (may be slower)")
+                write!(
+                    f,
+                    "GPU acceleration failed, using CPU instead (may be slower)"
+                )
             }
         }
     }
@@ -255,10 +280,16 @@ impl fmt::Display for ClaudeApiError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ClaudeApiError::ApiKeyNotFound => {
-                write!(f, "Claude API key not configured. Please add your API key in settings")
+                write!(
+                    f,
+                    "Claude API key not configured. Please add your API key in settings"
+                )
             }
             ClaudeApiError::InvalidApiKey => {
-                write!(f, "Invalid Claude API key. Please check your API key in settings")
+                write!(
+                    f,
+                    "Invalid Claude API key. Please check your API key in settings"
+                )
             }
             ClaudeApiError::ConnectionFailed(msg) => {
                 write!(f, "Failed to connect to Claude API: {}", msg)
@@ -267,7 +298,10 @@ impl fmt::Display for ClaudeApiError {
                 write!(f, "Claude API request failed: {}", msg)
             }
             ClaudeApiError::RateLimitExceeded => {
-                write!(f, "Claude API rate limit exceeded. Please try again in a moment")
+                write!(
+                    f,
+                    "Claude API rate limit exceeded. Please try again in a moment"
+                )
             }
             ClaudeApiError::InvalidResponse(msg) => {
                 write!(f, "Invalid response from Claude API: {}", msg)
@@ -289,10 +323,16 @@ impl fmt::Display for OpenAiApiError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             OpenAiApiError::ApiKeyNotFound => {
-                write!(f, "OpenAI API key not configured. Please add your API key in settings")
+                write!(
+                    f,
+                    "OpenAI API key not configured. Please add your API key in settings"
+                )
             }
             OpenAiApiError::InvalidApiKey => {
-                write!(f, "Invalid OpenAI API key. Please check your API key in settings")
+                write!(
+                    f,
+                    "Invalid OpenAI API key. Please check your API key in settings"
+                )
             }
             OpenAiApiError::ConnectionFailed(msg) => {
                 write!(f, "Failed to connect to OpenAI API: {}", msg)
@@ -301,7 +341,10 @@ impl fmt::Display for OpenAiApiError {
                 write!(f, "OpenAI API request failed: {}", msg)
             }
             OpenAiApiError::RateLimitExceeded => {
-                write!(f, "OpenAI API rate limit exceeded. Please try again in a moment")
+                write!(
+                    f,
+                    "OpenAI API rate limit exceeded. Please try again in a moment"
+                )
             }
             OpenAiApiError::InvalidResponse(msg) => {
                 write!(f, "Invalid response from OpenAI API: {}", msg)

@@ -89,8 +89,12 @@ mod tests {
 
         // Check key indexes
         assert!(indexes.iter().any(|i| i.contains("idx_recordings_created")));
-        assert!(indexes.iter().any(|i| i.contains("idx_transcripts_recording")));
+        assert!(indexes
+            .iter()
+            .any(|i| i.contains("idx_transcripts_recording")));
         assert!(indexes.iter().any(|i| i.contains("idx_transcripts_plugin")));
-        assert!(indexes.iter().any(|i| i.contains("idx_segments_transcript")));
+        assert!(indexes
+            .iter()
+            .any(|i| i.contains("idx_segments_transcript")));
     }
 }

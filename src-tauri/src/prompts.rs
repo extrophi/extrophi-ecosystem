@@ -3,12 +3,13 @@
 //! This module handles loading markdown prompt templates from the `/prompts/` directory.
 //! It supports multiple fallback locations and provides a default prompt if templates are not found.
 
+use crate::error::BrainDumpError;
 use std::fs;
 use std::path::PathBuf;
-use crate::error::BrainDumpError;
 
 /// Default fallback prompt when template files are not found
-const DEFAULT_PROMPT: &str = "You are a helpful, empathetic assistant. Listen carefully and respond with understanding.";
+const DEFAULT_PROMPT: &str =
+    "You are a helpful, empathetic assistant. Listen carefully and respond with understanding.";
 
 /// Load a prompt template by name
 ///
@@ -30,23 +31,42 @@ pub fn load_prompt_template(name: &str) -> Result<String, BrainDumpError> {
     let prompts_dir = get_prompts_dir();
     let filepath = prompts_dir.join(&filename);
 
-    crate::logging::info("Prompts", &format!("Loading template '{}' from: {}", name, filepath.display()));
+    crate::logging::info(
+        "Prompts",
+        &format!("Loading template '{}' from: {}", name, filepath.display()),
+    );
 
     // Try to read the file
     match fs::read_to_string(&filepath) {
         Ok(content) => {
-            crate::logging::info("Prompts", &format!("Successfully loaded template '{}' ({} bytes)", name, content.len()));
+            crate::logging::info(
+                "Prompts",
+                &format!(
+                    "Successfully loaded template '{}' ({} bytes)",
+                    name,
+                    content.len()
+                ),
+            );
 
             // Validate content is not empty
             if content.trim().is_empty() {
-                crate::logging::warn("Prompts", &format!("Template '{}' is empty, using default", name));
+                crate::logging::warn(
+                    "Prompts",
+                    &format!("Template '{}' is empty, using default", name),
+                );
                 Ok(DEFAULT_PROMPT.to_string())
             } else {
                 Ok(content)
             }
         }
         Err(e) => {
-            crate::logging::warn("Prompts", &format!("Failed to load template '{}': {}. Using default prompt.", name, e));
+            crate::logging::warn(
+                "Prompts",
+                &format!(
+                    "Failed to load template '{}': {}. Using default prompt.",
+                    name, e
+                ),
+            );
             // Fallback to default prompt instead of erroring
             Ok(DEFAULT_PROMPT.to_string())
         }
@@ -66,11 +86,17 @@ pub fn load_prompt_template(name: &str) -> Result<String, BrainDumpError> {
 pub fn list_prompt_templates() -> Result<Vec<String>, BrainDumpError> {
     let prompts_dir = get_prompts_dir();
 
-    crate::logging::info("Prompts", &format!("Scanning directory: {}", prompts_dir.display()));
+    crate::logging::info(
+        "Prompts",
+        &format!("Scanning directory: {}", prompts_dir.display()),
+    );
 
     // Check if directory exists
     if !prompts_dir.exists() {
-        crate::logging::warn("Prompts", &format!("Prompts directory not found at: {}", prompts_dir.display()));
+        crate::logging::warn(
+            "Prompts",
+            &format!("Prompts directory not found at: {}", prompts_dir.display()),
+        );
         return Ok(Vec::new());
     }
 
@@ -81,7 +107,8 @@ pub fn list_prompt_templates() -> Result<Vec<String>, BrainDumpError> {
     let mut templates = Vec::new();
 
     for entry in entries {
-        let entry = entry.map_err(|e| BrainDumpError::Io(format!("Failed to read directory entry: {}", e)))?;
+        let entry = entry
+            .map_err(|e| BrainDumpError::Io(format!("Failed to read directory entry: {}", e)))?;
         let path = entry.path();
 
         // Only process .md files
@@ -98,7 +125,10 @@ pub fn list_prompt_templates() -> Result<Vec<String>, BrainDumpError> {
     // Sort alphabetically for consistent ordering
     templates.sort();
 
-    crate::logging::info("Prompts", &format!("Found {} templates: {:?}", templates.len(), templates));
+    crate::logging::info(
+        "Prompts",
+        &format!("Found {} templates: {:?}", templates.len(), templates),
+    );
 
     Ok(templates)
 }
@@ -168,7 +198,10 @@ mod tests {
     #[test]
     fn test_load_brain_dump_prompt() {
         let result = load_prompt_template("brain_dump");
-        assert!(result.is_ok(), "Should load brain_dump prompt or return default");
+        assert!(
+            result.is_ok(),
+            "Should load brain_dump prompt or return default"
+        );
 
         let prompt = result.unwrap();
         assert!(!prompt.is_empty(), "Prompt should not be empty");
@@ -176,15 +209,20 @@ mod tests {
 
         // Check for expected content if the file exists
         if prompt != DEFAULT_PROMPT {
-            assert!(prompt.contains("Rogerian") || prompt.contains("therapist"),
-                    "Brain dump prompt should mention Rogerian or therapist");
+            assert!(
+                prompt.contains("Rogerian") || prompt.contains("therapist"),
+                "Brain dump prompt should mention Rogerian or therapist"
+            );
         }
     }
 
     #[test]
     fn test_load_end_of_day_prompt() {
         let result = load_prompt_template("end_of_day");
-        assert!(result.is_ok(), "Should load end_of_day prompt or return default");
+        assert!(
+            result.is_ok(),
+            "Should load end_of_day prompt or return default"
+        );
 
         let prompt = result.unwrap();
         assert!(!prompt.is_empty(), "Prompt should not be empty");
@@ -193,7 +231,10 @@ mod tests {
     #[test]
     fn test_load_end_of_month_prompt() {
         let result = load_prompt_template("end_of_month");
-        assert!(result.is_ok(), "Should load end_of_month prompt or return default");
+        assert!(
+            result.is_ok(),
+            "Should load end_of_month prompt or return default"
+        );
 
         let prompt = result.unwrap();
         assert!(!prompt.is_empty(), "Prompt should not be empty");
@@ -203,7 +244,10 @@ mod tests {
     fn test_load_nonexistent_template() {
         // Should return default prompt instead of erroring
         let result = load_prompt_template("nonexistent_template");
-        assert!(result.is_ok(), "Should return default prompt for nonexistent template");
+        assert!(
+            result.is_ok(),
+            "Should return default prompt for nonexistent template"
+        );
 
         let prompt = result.unwrap();
         assert_eq!(prompt, DEFAULT_PROMPT, "Should return default prompt");
@@ -218,12 +262,18 @@ mod tests {
 
         // If prompts directory exists, should find our templates
         if !templates.is_empty() {
-            assert!(templates.contains(&"brain_dump".to_string()),
-                    "Should find brain_dump template");
-            assert!(templates.contains(&"end_of_day".to_string()),
-                    "Should find end_of_day template");
-            assert!(templates.contains(&"end_of_month".to_string()),
-                    "Should find end_of_month template");
+            assert!(
+                templates.contains(&"brain_dump".to_string()),
+                "Should find brain_dump template"
+            );
+            assert!(
+                templates.contains(&"end_of_day".to_string()),
+                "Should find end_of_day template"
+            );
+            assert!(
+                templates.contains(&"end_of_month".to_string()),
+                "Should find end_of_month template"
+            );
         }
     }
 
@@ -239,6 +289,9 @@ mod tests {
     #[test]
     fn test_prompts_dir_path() {
         let dir = get_prompts_dir();
-        assert!(dir.ends_with("prompts"), "Should point to prompts directory");
+        assert!(
+            dir.ends_with("prompts"),
+            "Should point to prompts directory"
+        );
     }
 }

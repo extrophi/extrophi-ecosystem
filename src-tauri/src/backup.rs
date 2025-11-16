@@ -1,9 +1,9 @@
 //! Database backup and restore functionality
 
-use std::path::{Path, PathBuf};
-use std::fs;
 use chrono::{DateTime, Utc};
 use rusqlite::Connection;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use crate::error::BrainDumpError;
 
@@ -28,11 +28,15 @@ impl BackupManager {
     pub fn new(db_path: PathBuf, backup_dir: PathBuf) -> Result<Self, BrainDumpError> {
         // Create backup directory if it doesn't exist
         if !backup_dir.exists() {
-            fs::create_dir_all(&backup_dir)
-                .map_err(|e| BrainDumpError::Io(format!("Failed to create backup directory: {}", e)))?;
+            fs::create_dir_all(&backup_dir).map_err(|e| {
+                BrainDumpError::Io(format!("Failed to create backup directory: {}", e))
+            })?;
         }
 
-        Ok(Self { db_path, backup_dir })
+        Ok(Self {
+            db_path,
+            backup_dir,
+        })
     }
 
     /// Get default backup directory for the platform
@@ -54,11 +58,17 @@ impl BackupManager {
 
     /// Create a backup of the database
     pub fn create_backup(&self, is_automatic: bool) -> Result<BackupInfo, BrainDumpError> {
-        crate::logging::info("Backup", &format!("Creating backup from: {}", self.db_path.display()));
+        crate::logging::info(
+            "Backup",
+            &format!("Creating backup from: {}", self.db_path.display()),
+        );
 
         // Verify source database exists
         if !self.db_path.exists() {
-            return Err(BrainDumpError::Io(format!("Database file not found: {}", self.db_path.display())));
+            return Err(BrainDumpError::Io(format!(
+                "Database file not found: {}",
+                self.db_path.display()
+            )));
         }
 
         // Generate backup filename with timestamp
@@ -66,7 +76,10 @@ impl BackupManager {
         let backup_name = format!("braindump_backup_{}.db", timestamp.format("%Y%m%d_%H%M%S"));
         let backup_path = self.backup_dir.join(&backup_name);
 
-        crate::logging::info("Backup", &format!("Backup destination: {}", backup_path.display()));
+        crate::logging::info(
+            "Backup",
+            &format!("Backup destination: {}", backup_path.display()),
+        );
 
         // Use SQLite VACUUM INTO for clean, compact backup
         let conn = Connection::open(&self.db_path)
@@ -79,12 +92,19 @@ impl BackupManager {
         drop(conn);
 
         // Get file size
-        let metadata = fs::metadata(&backup_path)
-            .map_err(|e| BrainDumpError::Io(format!("Failed to get backup file metadata: {}", e)))?;
+        let metadata = fs::metadata(&backup_path).map_err(|e| {
+            BrainDumpError::Io(format!("Failed to get backup file metadata: {}", e))
+        })?;
 
         let file_size_bytes = metadata.len() as i64;
 
-        crate::logging::info("Backup", &format!("Backup created successfully: {} ({} bytes)", backup_name, file_size_bytes));
+        crate::logging::info(
+            "Backup",
+            &format!(
+                "Backup created successfully: {} ({} bytes)",
+                backup_name, file_size_bytes
+            ),
+        );
 
         Ok(BackupInfo {
             file_path: backup_path.to_string_lossy().to_string(),
@@ -97,21 +117,34 @@ impl BackupManager {
 
     /// Restore database from a backup file
     pub fn restore_backup(&self, backup_path: &Path) -> Result<(), BrainDumpError> {
-        crate::logging::info("Backup", &format!("Restoring from backup: {}", backup_path.display()));
+        crate::logging::info(
+            "Backup",
+            &format!("Restoring from backup: {}", backup_path.display()),
+        );
 
         // Verify backup file exists
         if !backup_path.exists() {
-            return Err(BrainDumpError::Io(format!("Backup file not found: {}", backup_path.display())));
+            return Err(BrainDumpError::Io(format!(
+                "Backup file not found: {}",
+                backup_path.display()
+            )));
         }
 
         // Verify backup is a valid SQLite database
-        Connection::open(backup_path)
-            .map_err(|e| BrainDumpError::Io(format!("Invalid backup file (not a SQLite database): {}", e)))?;
+        Connection::open(backup_path).map_err(|e| {
+            BrainDumpError::Io(format!(
+                "Invalid backup file (not a SQLite database): {}",
+                e
+            ))
+        })?;
 
         // Create safety backup of current DB before restoring
         crate::logging::info("Backup", "Creating safety backup before restore");
         let safety_backup = self.create_backup(false)?;
-        crate::logging::info("Backup", &format!("Safety backup created: {}", safety_backup.file_path));
+        crate::logging::info(
+            "Backup",
+            &format!("Safety backup created: {}", safety_backup.file_path),
+        );
 
         // Close any open connections to the database
         // (In production, this should be handled by the caller)
@@ -137,7 +170,9 @@ impl BackupManager {
             .map_err(|e| BrainDumpError::Io(format!("Failed to read backup directory: {}", e)))?;
 
         for entry in entries {
-            let entry = entry.map_err(|e| BrainDumpError::Io(format!("Failed to read directory entry: {}", e)))?;
+            let entry = entry.map_err(|e| {
+                BrainDumpError::Io(format!("Failed to read directory entry: {}", e))
+            })?;
             let path = entry.path();
 
             // Only include .db files
@@ -149,18 +184,22 @@ impl BackupManager {
             let metadata = fs::metadata(&path)
                 .map_err(|e| BrainDumpError::Io(format!("Failed to get file metadata: {}", e)))?;
 
-            let file_name = path.file_name()
+            let file_name = path
+                .file_name()
                 .and_then(|s| s.to_str())
                 .unwrap_or("unknown")
                 .to_string();
 
             // Try to parse timestamp from filename
-            let created_at = metadata.created()
+            let created_at = metadata
+                .created()
                 .ok()
-                .and_then(|t| DateTime::from_timestamp(
-                    t.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() as i64,
-                    0
-                ))
+                .and_then(|t| {
+                    DateTime::from_timestamp(
+                        t.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() as i64,
+                        0,
+                    )
+                })
                 .unwrap_or_else(|| Utc::now());
 
             // Determine if automatic based on filename pattern
@@ -184,13 +223,19 @@ impl BackupManager {
     /// Delete a backup file
     pub fn delete_backup(&self, backup_path: &Path) -> Result<(), BrainDumpError> {
         if !backup_path.exists() {
-            return Err(BrainDumpError::Io(format!("Backup file not found: {}", backup_path.display())));
+            return Err(BrainDumpError::Io(format!(
+                "Backup file not found: {}",
+                backup_path.display()
+            )));
         }
 
         fs::remove_file(backup_path)
             .map_err(|e| BrainDumpError::Io(format!("Failed to delete backup: {}", e)))?;
 
-        crate::logging::info("Backup", &format!("Backup deleted: {}", backup_path.display()));
+        crate::logging::info(
+            "Backup",
+            &format!("Backup deleted: {}", backup_path.display()),
+        );
 
         Ok(())
     }
@@ -209,13 +254,19 @@ impl BackupManager {
         for backup in to_delete {
             let path = Path::new(&backup.file_path);
             if let Err(e) = self.delete_backup(path) {
-                crate::logging::error("Backup", &format!("Failed to delete old backup {}: {}", backup.file_name, e));
+                crate::logging::error(
+                    "Backup",
+                    &format!("Failed to delete old backup {}: {}", backup.file_name, e),
+                );
             } else {
                 deleted_count += 1;
             }
         }
 
-        crate::logging::info("Backup", &format!("Cleaned up {} old backup(s)", deleted_count));
+        crate::logging::info(
+            "Backup",
+            &format!("Cleaned up {} old backup(s)", deleted_count),
+        );
 
         Ok(deleted_count)
     }
@@ -240,7 +291,9 @@ mod tests {
     #[test]
     fn test_get_default_backup_dir() {
         let backup_dir = BackupManager::get_default_backup_dir();
-        assert!(backup_dir.to_string_lossy().contains("BrainDump") ||
-                backup_dir.to_string_lossy().contains("braindump"));
+        assert!(
+            backup_dir.to_string_lossy().contains("BrainDump")
+                || backup_dir.to_string_lossy().contains("braindump")
+        );
     }
 }

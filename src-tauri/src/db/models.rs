@@ -170,7 +170,7 @@ pub struct PromptUsage {
 pub struct BackupSettings {
     pub id: Option<i64>,
     pub enabled: bool,
-    pub frequency: String,  // "daily", "weekly", "manual"
+    pub frequency: String, // "daily", "weekly", "manual"
     pub backup_path: String,
     pub retention_count: i64,
     pub last_backup_at: Option<DateTime<Utc>>,
@@ -184,7 +184,7 @@ pub struct BackupHistory {
     pub file_size_bytes: i64,
     pub created_at: DateTime<Utc>,
     pub is_automatic: bool,
-    pub status: String,  // "success" or "failed"
+    pub status: String, // "success" or "failed"
     pub error_message: Option<String>,
 }
 

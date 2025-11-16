@@ -4,24 +4,28 @@
 //! Module 8: Memory-safe audio recording using cpal and hound
 //! Module 9: SQLite database with Repository pattern
 
-use std::sync::Arc;
 use parking_lot::Mutex;
 use std::sync::mpsc;
+use std::sync::Arc;
 
 pub mod audio;
-pub mod db;
-pub mod plugin;
-pub mod error;
-pub mod logging;
-pub mod services;
-pub mod export;
-pub mod prompts;
 pub mod backup;
+pub mod db;
+pub mod error;
+pub mod export;
+pub mod logging;
+pub mod plugin;
+pub mod prompts;
+pub mod services;
 
 pub use audio::{Recorder, RecorderError, RecorderResult, WavWriter};
 pub use db::{initialize_db, models, repository, Recording, Repository, Segment, Transcript};
-pub use plugin::{AudioData, PluginError, Transcript as PluginTranscript, TranscriptSegment, TranscriptionPlugin};
-pub use error::{BrainDumpError, AudioError, DatabaseError, TranscriptionError, ClaudeApiError, OpenAiApiError};
+pub use error::{
+    AudioError, BrainDumpError, ClaudeApiError, DatabaseError, OpenAiApiError, TranscriptionError,
+};
+pub use plugin::{
+    AudioData, PluginError, Transcript as PluginTranscript, TranscriptSegment, TranscriptionPlugin,
+};
 pub use services::{ClaudeClient, OpenAiClient};
 
 /// Commands sent to the audio thread

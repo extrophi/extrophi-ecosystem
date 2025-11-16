@@ -3,7 +3,7 @@
 //! This module re-exports common types and provides convenience type aliases
 //! for plugin operations.
 
-pub use super::{AudioData, Transcript, TranscriptSegment, PluginError};
+pub use super::{AudioData, PluginError, Transcript, TranscriptSegment};
 
 /// Result type alias for plugin operations
 pub type PluginResult<T> = Result<T, PluginError>;
@@ -56,8 +56,8 @@ pub fn resample_audio(samples: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32>
 
         if src_idx + 1 < samples.len() {
             // Linear interpolation
-            let sample = samples[src_idx] * (1.0 - frac) as f32
-                + samples[src_idx + 1] * frac as f32;
+            let sample =
+                samples[src_idx] * (1.0 - frac) as f32 + samples[src_idx + 1] * frac as f32;
             output.push(sample);
         } else if src_idx < samples.len() {
             output.push(samples[src_idx]);
@@ -81,17 +81,13 @@ pub fn normalize_audio(samples: &[f32]) -> Vec<f32> {
         return vec![];
     }
 
-    let max_val = samples.iter()
-        .map(|s| s.abs())
-        .fold(0.0f32, f32::max);
+    let max_val = samples.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
 
     if max_val == 0.0 || max_val == 1.0 {
         return samples.to_vec();
     }
 
-    samples.iter()
-        .map(|s| s / max_val)
-        .collect()
+    samples.iter().map(|s| s / max_val).collect()
 }
 
 /// Calculate audio duration in milliseconds

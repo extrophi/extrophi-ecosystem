@@ -1,14 +1,14 @@
 //! Tauri IPC command handlers
 
-use braindump::{
-    AppState, WavWriter, AudioData, Recording, Transcript, AudioCommand, AudioResponse,
-    BrainDumpError, AudioError, DatabaseError, TranscriptionError, ClaudeClient,
-};
 use braindump::services::claude_api::Message as ClaudeMessage;
-use tauri::State;
-use std::time::Instant;
+use braindump::{
+    AppState, AudioCommand, AudioData, AudioError, AudioResponse, BrainDumpError, ClaudeClient,
+    DatabaseError, Recording, Transcript, TranscriptionError, WavWriter,
+};
+use rubato::{Resampler, SincFixedIn};
 use std::sync::mpsc;
-use rubato::{SincFixedIn, Resampler};
+use std::time::Instant;
+use tauri::State;
 
 /// Resample audio from source sample rate to 16kHz for Whisper
 fn resample_to_16khz(samples: &[f32], source_rate: u32) -> Result<Vec<f32>, BrainDumpError> {
@@ -16,7 +16,10 @@ fn resample_to_16khz(samples: &[f32], source_rate: u32) -> Result<Vec<f32>, Brai
         return Ok(samples.to_vec());
     }
 
-    braindump::logging::info("Resampling", &format!("Resampling from {}Hz to 16kHz", source_rate));
+    braindump::logging::info(
+        "Resampling",
+        &format!("Resampling from {}Hz to 16kHz", source_rate),
+    );
 
     let params = rubato::SincInterpolationParameters {
         sinc_len: 256,
@@ -32,13 +35,22 @@ fn resample_to_16khz(samples: &[f32], source_rate: u32) -> Result<Vec<f32>, Brai
         params,
         samples.len(),
         1,
-    ).map_err(|_e| BrainDumpError::Transcription(TranscriptionError::InvalidAudioData))?;
+    )
+    .map_err(|_e| BrainDumpError::Transcription(TranscriptionError::InvalidAudioData))?;
 
     let waves_in = vec![samples.to_vec()];
-    let mut waves_out = resampler.process(&waves_in, None)
+    let mut waves_out = resampler
+        .process(&waves_in, None)
         .map_err(|_e| BrainDumpError::Transcription(TranscriptionError::InvalidAudioData))?;
 
-    braindump::logging::info("Resampling", &format!("Resampled {} samples to {} samples", samples.len(), waves_out[0].len()));
+    braindump::logging::info(
+        "Resampling",
+        &format!(
+            "Resampled {} samples to {} samples",
+            samples.len(),
+            waves_out[0].len()
+        ),
+    );
 
     Ok(waves_out.remove(0))
 }
@@ -47,10 +59,15 @@ fn resample_to_16khz(samples: &[f32], source_rate: u32) -> Result<Vec<f32>, Brai
 pub async fn start_recording(state: State<'_, AppState>) -> Result<String, BrainDumpError> {
     let (response_tx, response_rx) = mpsc::channel();
 
-    state.audio_tx.send((AudioCommand::StartRecording, response_tx))
+    state
+        .audio_tx
+        .send((AudioCommand::StartRecording, response_tx))
         .map_err(|e| BrainDumpError::Audio(AudioError::DeviceInitFailed(e.to_string())))?;
 
-    match response_rx.recv().map_err(|e| BrainDumpError::Audio(AudioError::DeviceInitFailed(e.to_string())))? {
+    match response_rx
+        .recv()
+        .map_err(|e| BrainDumpError::Audio(AudioError::DeviceInitFailed(e.to_string())))?
+    {
         AudioResponse::RecordingStarted => Ok("Recording started".to_string()),
         AudioResponse::Error(e) => Err(BrainDumpError::Audio(AudioError::RecordingFailed(e))),
         _ => Err(BrainDumpError::Other("Unexpected response".to_string())),
@@ -58,20 +75,36 @@ pub async fn start_recording(state: State<'_, AppState>) -> Result<String, Brain
 }
 
 #[tauri::command]
-pub async fn stop_recording(state: State<'_, AppState>) -> Result<serde_json::Value, BrainDumpError> {
+pub async fn stop_recording(
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, BrainDumpError> {
     // Stop recording via audio thread
     let (response_tx, response_rx) = mpsc::channel();
 
-    state.audio_tx.send((AudioCommand::StopRecording, response_tx))
+    state
+        .audio_tx
+        .send((AudioCommand::StopRecording, response_tx))
         .map_err(|e| BrainDumpError::Audio(AudioError::DeviceInitFailed(e.to_string())))?;
 
-    let (samples, sample_rate) = match response_rx.recv().map_err(|e| BrainDumpError::Audio(AudioError::DeviceInitFailed(e.to_string())))? {
-        AudioResponse::RecordingStopped { samples, sample_rate } => (samples, sample_rate),
-        AudioResponse::Error(e) => return Err(BrainDumpError::Audio(AudioError::RecordingFailed(e))),
+    let (samples, sample_rate) = match response_rx
+        .recv()
+        .map_err(|e| BrainDumpError::Audio(AudioError::DeviceInitFailed(e.to_string())))?
+    {
+        AudioResponse::RecordingStopped {
+            samples,
+            sample_rate,
+        } => (samples, sample_rate),
+        AudioResponse::Error(e) => {
+            return Err(BrainDumpError::Audio(AudioError::RecordingFailed(e)))
+        }
         _ => return Err(BrainDumpError::Other("Unexpected response".to_string())),
     };
 
-    eprintln!("✓ Step 1: Recording stopped ({} samples at {}Hz)", samples.len(), sample_rate);
+    eprintln!(
+        "✓ Step 1: Recording stopped ({} samples at {}Hz)",
+        samples.len(),
+        sample_rate
+    );
 
     // Save WAV to test directory
     let timestamp = chrono::Utc::now().format("%Y-%m-%d_%H-%M-%S");
@@ -81,19 +114,30 @@ pub async fn stop_recording(state: State<'_, AppState>) -> Result<serde_json::Va
     );
 
     eprintln!("✓ Step 2: Saving WAV to {}", filepath);
-    WavWriter::write_with_rate(&filepath, &samples, sample_rate)
-        .map_err(|e| {
-            eprintln!("❌ ERROR: Failed to save WAV: {}", e);
-            BrainDumpError::Io(e.to_string())
-        })?;
+    WavWriter::write_with_rate(&filepath, &samples, sample_rate).map_err(|e| {
+        eprintln!("❌ ERROR: Failed to save WAV: {}", e);
+        BrainDumpError::Io(e.to_string())
+    })?;
 
     eprintln!("✓ Step 3: Calling Whisper FFI transcription via plugin manager");
-    braindump::logging::info("Transcription", &format!("Audio data: {} samples at {}Hz", samples.len(), sample_rate));
+    braindump::logging::info(
+        "Transcription",
+        &format!("Audio data: {} samples at {}Hz", samples.len(), sample_rate),
+    );
 
     // Check sample rate
     if sample_rate != 16000 {
-        braindump::logging::warn("Transcription", &format!("Sample rate {}Hz != 16kHz (Whisper requirement). Resampling needed!", sample_rate));
-        eprintln!("⚠️  WARNING: Audio is {}Hz, Whisper expects 16kHz. Resampling...", sample_rate);
+        braindump::logging::warn(
+            "Transcription",
+            &format!(
+                "Sample rate {}Hz != 16kHz (Whisper requirement). Resampling needed!",
+                sample_rate
+            ),
+        );
+        eprintln!(
+            "⚠️  WARNING: Audio is {}Hz, Whisper expects 16kHz. Resampling...",
+            sample_rate
+        );
     }
 
     // Resample to 16kHz if needed
@@ -103,7 +147,13 @@ pub async fn stop_recording(state: State<'_, AppState>) -> Result<serde_json::Va
         samples.clone()
     };
 
-    braindump::logging::info("Transcription", &format!("Prepared {} samples at 16kHz for Whisper", resampled_samples.len()));
+    braindump::logging::info(
+        "Transcription",
+        &format!(
+            "Prepared {} samples at 16kHz for Whisper",
+            resampled_samples.len()
+        ),
+    );
 
     // Transcribe
     let start_time = Instant::now();
@@ -111,7 +161,7 @@ pub async fn stop_recording(state: State<'_, AppState>) -> Result<serde_json::Va
 
     let audio_data = AudioData {
         samples: resampled_samples,
-        sample_rate: 16000,  // Always 16kHz after resampling
+        sample_rate: 16000, // Always 16kHz after resampling
         channels: 1,
     };
 
@@ -134,11 +184,17 @@ pub async fn stop_recording(state: State<'_, AppState>) -> Result<serde_json::Va
         }
     };
 
-    braindump::logging::info("Transcription", &format!("Result: {} characters", transcript.text.len()));
+    braindump::logging::info(
+        "Transcription",
+        &format!("Result: {} characters", transcript.text.len()),
+    );
     eprintln!("✓ Transcription text: {} characters", transcript.text.len());
 
     let transcription_duration = start_time.elapsed().as_millis() as i64;
-    eprintln!("✓ Step 4: Transcription completed in {}ms", transcription_duration);
+    eprintln!(
+        "✓ Step 4: Transcription completed in {}ms",
+        transcription_duration
+    );
     drop(manager);
 
     // Save transcript to markdown file
@@ -157,11 +213,10 @@ pub async fn stop_recording(state: State<'_, AppState>) -> Result<serde_json::Va
     );
 
     eprintln!("✓ Step 5: Saving transcript to {}", transcript_path);
-    std::fs::write(&transcript_path, markdown_content)
-        .map_err(|e| {
-            eprintln!("❌ ERROR: Failed to save transcript: {}", e);
-            BrainDumpError::Io(e.to_string())
-        })?;
+    std::fs::write(&transcript_path, markdown_content).map_err(|e| {
+        eprintln!("❌ ERROR: Failed to save transcript: {}", e);
+        BrainDumpError::Io(e.to_string())
+    })?;
 
     eprintln!("✓ Step 6: Saving to database");
 
@@ -180,13 +235,15 @@ pub async fn stop_recording(state: State<'_, AppState>) -> Result<serde_json::Va
         updated_at: chrono::Utc::now(),
     };
 
-    let recording_id = db.create_recording(&recording)
-        .map_err(|e| {
-            eprintln!("❌ ERROR: Failed to save recording to database: {}", e);
-            BrainDumpError::Database(DatabaseError::WriteFailed(e.to_string()))
-        })?;
+    let recording_id = db.create_recording(&recording).map_err(|e| {
+        eprintln!("❌ ERROR: Failed to save recording to database: {}", e);
+        BrainDumpError::Database(DatabaseError::WriteFailed(e.to_string()))
+    })?;
 
-    eprintln!("✓ Step 7: Recording saved to database with ID: {}", recording_id);
+    eprintln!(
+        "✓ Step 7: Recording saved to database with ID: {}",
+        recording_id
+    );
 
     // Create transcript entry
     let transcript_entry = Transcript {
@@ -200,11 +257,10 @@ pub async fn stop_recording(state: State<'_, AppState>) -> Result<serde_json::Va
         created_at: chrono::Utc::now(),
     };
 
-    db.create_transcript(&transcript_entry)
-        .map_err(|e| {
-            eprintln!("❌ ERROR: Failed to save transcript to database: {}", e);
-            BrainDumpError::Database(DatabaseError::WriteFailed(e.to_string()))
-        })?;
+    db.create_transcript(&transcript_entry).map_err(|e| {
+        eprintln!("❌ ERROR: Failed to save transcript to database: {}", e);
+        BrainDumpError::Database(DatabaseError::WriteFailed(e.to_string()))
+    })?;
 
     eprintln!("✓ Step 8: Transcript saved to database");
 
@@ -221,11 +277,10 @@ pub async fn stop_recording(state: State<'_, AppState>) -> Result<serde_json::Va
             updated_at: now,
         };
 
-        let session_id = db.create_chat_session(&session)
-            .map_err(|e| {
-                eprintln!("❌ ERROR: Failed to create chat session: {}", e);
-                BrainDumpError::Database(DatabaseError::WriteFailed(e.to_string()))
-            })?;
+        let session_id = db.create_chat_session(&session).map_err(|e| {
+            eprintln!("❌ ERROR: Failed to create chat session: {}", e);
+            BrainDumpError::Database(DatabaseError::WriteFailed(e.to_string()))
+        })?;
 
         eprintln!("✓ Step 10: Chat session created with ID: {}", session_id);
 
@@ -240,11 +295,10 @@ pub async fn stop_recording(state: State<'_, AppState>) -> Result<serde_json::Va
             created_at: now,
         };
 
-        db.create_message(&message)
-            .map_err(|e| {
-                eprintln!("❌ ERROR: Failed to save message: {}", e);
-                BrainDumpError::Database(DatabaseError::WriteFailed(e.to_string()))
-            })?;
+        db.create_message(&message).map_err(|e| {
+            eprintln!("❌ ERROR: Failed to save message: {}", e);
+            BrainDumpError::Database(DatabaseError::WriteFailed(e.to_string()))
+        })?;
 
         eprintln!("✓ Step 11: Transcript saved as user message");
 
@@ -281,7 +335,8 @@ pub async fn get_transcripts(
     limit: usize,
 ) -> Result<Vec<TranscriptHistoryItem>, BrainDumpError> {
     let db = state.db.lock();
-    let recordings = db.list_recordings(limit)
+    let recordings = db
+        .list_recordings(limit)
         .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
 
     let mut results = Vec::new();
@@ -306,10 +361,15 @@ pub async fn get_transcripts(
 pub async fn get_peak_level(state: State<'_, AppState>) -> Result<f32, BrainDumpError> {
     let (response_tx, response_rx) = mpsc::channel();
 
-    state.audio_tx.send((AudioCommand::GetPeakLevel, response_tx))
+    state
+        .audio_tx
+        .send((AudioCommand::GetPeakLevel, response_tx))
         .map_err(|e| BrainDumpError::Audio(AudioError::DeviceInitFailed(e.to_string())))?;
 
-    match response_rx.recv().map_err(|e| BrainDumpError::Audio(AudioError::DeviceInitFailed(e.to_string())))? {
+    match response_rx
+        .recv()
+        .map_err(|e| BrainDumpError::Audio(AudioError::DeviceInitFailed(e.to_string())))?
+    {
         AudioResponse::PeakLevel(level) => Ok(level),
         AudioResponse::Error(e) => Err(BrainDumpError::Audio(AudioError::RecordingFailed(e))),
         _ => Err(BrainDumpError::Other("Unexpected response".to_string())),
@@ -321,9 +381,7 @@ pub async fn is_model_loaded(state: State<'_, AppState>) -> Result<bool, BrainDu
     let manager = state.plugin_manager.lock();
 
     // Check if any plugin is registered and initialized
-    Ok(manager.get_active()
-        .map(|_| true)
-        .unwrap_or(false))
+    Ok(manager.get_active().map(|_| true).unwrap_or(false))
 }
 
 /// Test command to verify IPC error serialization
@@ -351,11 +409,13 @@ pub async fn create_chat_session(
         updated_at: chrono::Utc::now(),
     };
 
-    let session_id = db.create_chat_session(&session)
+    let session_id = db
+        .create_chat_session(&session)
         .map_err(|e| BrainDumpError::Database(DatabaseError::WriteFailed(e.to_string())))?;
 
     // Fetch the created session to return with ID
-    let created_session = db.get_chat_session(session_id)
+    let created_session = db
+        .get_chat_session(session_id)
         .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
 
     Ok(created_session)
@@ -368,7 +428,8 @@ pub async fn list_chat_sessions(
 ) -> Result<Vec<ChatSession>, BrainDumpError> {
     let db = state.db.lock();
 
-    let sessions = db.list_chat_sessions(limit)
+    let sessions = db
+        .list_chat_sessions(limit)
         .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
 
     Ok(sessions)
@@ -384,8 +445,7 @@ pub async fn save_message(
 ) -> Result<Message, BrainDumpError> {
     let db = state.db.lock();
 
-    let message_role = MessageRole::from_str(&role)
-        .map_err(|e| BrainDumpError::Other(e))?;
+    let message_role = MessageRole::from_str(&role).map_err(|e| BrainDumpError::Other(e))?;
 
     let message = Message {
         id: None,
@@ -397,7 +457,8 @@ pub async fn save_message(
         created_at: chrono::Utc::now(),
     };
 
-    let message_id = db.create_message(&message)
+    let message_id = db
+        .create_message(&message)
         .map_err(|e| BrainDumpError::Database(DatabaseError::WriteFailed(e.to_string())))?;
 
     // Return the message with ID
@@ -414,7 +475,8 @@ pub async fn get_messages(
 ) -> Result<Vec<Message>, BrainDumpError> {
     let db = state.db.lock();
 
-    let messages = db.list_messages_by_session(session_id)
+    let messages = db
+        .list_messages_by_session(session_id)
         .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
 
     Ok(messages)
@@ -537,13 +599,12 @@ pub async fn send_openai_message(
     // Convert tuples to ChatMessage format
     let chat_messages: Vec<OpenAiChatMessage> = messages
         .into_iter()
-        .map(|(role, content)| OpenAiChatMessage {
-            role,
-            content,
-        })
+        .map(|(role, content)| OpenAiChatMessage { role, content })
         .collect();
 
-    let response = openai_client.send_message(chat_messages, system_prompt).await?;
+    let response = openai_client
+        .send_message(chat_messages, system_prompt)
+        .await?;
     Ok(response)
 }
 
@@ -562,9 +623,7 @@ pub async fn has_openai_key() -> Result<bool, BrainDumpError> {
 
 /// Test OpenAI API key validity
 #[tauri::command]
-pub async fn test_openai_connection(
-    state: State<'_, AppState>,
-) -> Result<bool, BrainDumpError> {
+pub async fn test_openai_connection(state: State<'_, AppState>) -> Result<bool, BrainDumpError> {
     let result = state.openai_client.test_connection().await?;
     Ok(result)
 }
@@ -616,21 +675,25 @@ pub async fn open_openai_auth_browser() -> Result<(), BrainDumpError> {
 #[tauri::command]
 pub async fn export_session(
     session_id: i64,
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<String, BrainDumpError> {
     let db = state.db.lock();
 
     // Get session and messages
-    let session = db.get_chat_session(session_id)
+    let session = db
+        .get_chat_session(session_id)
         .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
 
-    let messages = db.list_messages_by_session(session_id)
+    let messages = db
+        .list_messages_by_session(session_id)
         .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
 
     drop(db);
 
     if messages.is_empty() {
-        return Err(BrainDumpError::Other("Cannot export empty session".to_string()));
+        return Err(BrainDumpError::Other(
+            "Cannot export empty session".to_string(),
+        ));
     }
 
     // Export to markdown
@@ -664,7 +727,7 @@ pub async fn list_prompts() -> Result<Vec<String>, BrainDumpError> {
 pub async fn rename_session(
     session_id: i64,
     new_title: String,
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<(), BrainDumpError> {
     if new_title.trim().is_empty() {
         return Err(BrainDumpError::Other("Title cannot be empty".to_string()));
@@ -681,7 +744,7 @@ pub async fn rename_session(
 #[tauri::command]
 pub async fn delete_session(
     session_id: i64,
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<(), BrainDumpError> {
     let db = state.db.lock();
 
@@ -698,11 +761,10 @@ pub async fn delete_session(
 
 /// Get selected AI provider (openai or claude)
 #[tauri::command]
-pub async fn get_selected_provider(
-    state: State<'_, AppState>
-) -> Result<String, BrainDumpError> {
+pub async fn get_selected_provider(state: State<'_, AppState>) -> Result<String, BrainDumpError> {
     let db = state.db.lock();
-    let provider = db.get_app_setting("selected_provider")
+    let provider = db
+        .get_app_setting("selected_provider")
         .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?
         .unwrap_or_else(|| "openai".to_string());
     Ok(provider)
@@ -712,12 +774,12 @@ pub async fn get_selected_provider(
 #[tauri::command]
 pub async fn set_selected_provider(
     provider: String,
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<(), BrainDumpError> {
     // Validate provider value
     if provider != "openai" && provider != "claude" {
         return Err(BrainDumpError::Other(
-            "Invalid provider. Must be 'openai' or 'claude'".to_string()
+            "Invalid provider. Must be 'openai' or 'claude'".to_string(),
         ));
     }
 
@@ -759,10 +821,7 @@ pub async fn send_ai_message(
             // Convert tuples to OpenAI ChatMessage format
             let openai_messages: Vec<OpenAiChatMessage> = messages
                 .into_iter()
-                .map(|(role, content)| OpenAiChatMessage {
-                    role,
-                    content,
-                })
+                .map(|(role, content)| OpenAiChatMessage { role, content })
                 .collect();
 
             client.send_message(openai_messages, system_prompt).await?
@@ -781,9 +840,10 @@ pub async fn send_ai_message(
             }
         }
         _ => {
-            return Err(BrainDumpError::Other(
-                format!("Unknown provider: {}", selected_provider)
-            ));
+            return Err(BrainDumpError::Other(format!(
+                "Unknown provider: {}",
+                selected_provider
+            )));
         }
     };
 
@@ -807,7 +867,10 @@ pub async fn list_user_prompts(state: State<'_, AppState>) -> Result<Vec<Prompt>
 
 /// Get a single prompt by ID
 #[tauri::command]
-pub async fn get_user_prompt(id: i64, state: State<'_, AppState>) -> Result<Prompt, BrainDumpError> {
+pub async fn get_user_prompt(
+    id: i64,
+    state: State<'_, AppState>,
+) -> Result<Prompt, BrainDumpError> {
     let db = state.db.lock();
     db.get_user_prompt(id)
         .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))
@@ -819,7 +882,7 @@ pub async fn create_user_prompt(
     name: String,
     title: String,
     content: String,
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<i64, BrainDumpError> {
     let db = state.db.lock();
     db.create_user_prompt(&name, &title, &content)
@@ -832,7 +895,7 @@ pub async fn update_user_prompt(
     id: i64,
     title: String,
     content: String,
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<(), BrainDumpError> {
     let db = state.db.lock();
     db.update_user_prompt(id, &title, &content)
@@ -853,16 +916,15 @@ pub async fn delete_user_prompt(id: i64, state: State<'_, AppState>) -> Result<(
 // Usage Statistics Commands (Issue #10)
 // ============================================================================
 
-use braindump::db::models::{UsageStats, UsageEvent};
+use braindump::db::models::{UsageEvent, UsageStats};
 
 /// Get usage statistics for the dashboard
 #[tauri::command]
-pub async fn get_usage_stats(
-    state: State<'_, AppState>
-) -> Result<UsageStats, BrainDumpError> {
+pub async fn get_usage_stats(state: State<'_, AppState>) -> Result<UsageStats, BrainDumpError> {
     let db = state.db.lock();
 
-    let stats = db.get_usage_stats()
+    let stats = db
+        .get_usage_stats()
         .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
 
     Ok(stats)
@@ -874,7 +936,7 @@ pub async fn track_usage(
     event_type: String,
     provider: Option<String>,
     prompt_name: Option<String>,
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<(), BrainDumpError> {
     let db = state.db.lock();
 
@@ -902,9 +964,7 @@ use braindump::db::models::Tag;
 
 /// Get all tags
 #[tauri::command]
-pub async fn get_all_tags(
-    state: State<'_, AppState>
-) -> Result<Vec<Tag>, BrainDumpError> {
+pub async fn get_all_tags(state: State<'_, AppState>) -> Result<Vec<Tag>, BrainDumpError> {
     let db = state.db.lock();
     db.list_tags()
         .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))
@@ -915,17 +975,18 @@ pub async fn get_all_tags(
 pub async fn create_tag(
     name: String,
     color: String,
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<Tag, BrainDumpError> {
     // Validate color format (should be hex color)
     if !color.starts_with('#') || color.len() != 7 {
         return Err(BrainDumpError::Other(
-            "Invalid color format. Use hex color like #3B82F6".to_string()
+            "Invalid color format. Use hex color like #3B82F6".to_string(),
         ));
     }
 
     let db = state.db.lock();
-    let tag_id = db.create_tag(&name, &color)
+    let tag_id = db
+        .create_tag(&name, &color)
         .map_err(|e| BrainDumpError::Database(DatabaseError::WriteFailed(e.to_string())))?;
 
     db.get_tag(tag_id)
@@ -937,7 +998,7 @@ pub async fn create_tag(
 pub async fn add_tag_to_session(
     session_id: i64,
     tag_id: i64,
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<(), BrainDumpError> {
     let db = state.db.lock();
     db.add_tag_to_session(session_id, tag_id)
@@ -950,7 +1011,7 @@ pub async fn add_tag_to_session(
 pub async fn remove_tag_from_session(
     session_id: i64,
     tag_id: i64,
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<(), BrainDumpError> {
     let db = state.db.lock();
     db.remove_tag_from_session(session_id, tag_id)
@@ -962,7 +1023,7 @@ pub async fn remove_tag_from_session(
 #[tauri::command]
 pub async fn get_session_tags(
     session_id: i64,
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<Vec<Tag>, BrainDumpError> {
     let db = state.db.lock();
     db.get_session_tags(session_id)
@@ -971,10 +1032,7 @@ pub async fn get_session_tags(
 
 /// Delete a tag
 #[tauri::command]
-pub async fn delete_tag(
-    tag_id: i64,
-    state: State<'_, AppState>
-) -> Result<(), BrainDumpError> {
+pub async fn delete_tag(tag_id: i64, state: State<'_, AppState>) -> Result<(), BrainDumpError> {
     let db = state.db.lock();
     db.delete_tag(tag_id)
         .map_err(|e| BrainDumpError::Database(DatabaseError::WriteFailed(e.to_string())))?;
@@ -986,7 +1044,7 @@ pub async fn delete_tag(
 pub async fn rename_tag(
     tag_id: i64,
     new_name: String,
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<(), BrainDumpError> {
     let db = state.db.lock();
     db.rename_tag(tag_id, &new_name)
@@ -999,12 +1057,12 @@ pub async fn rename_tag(
 pub async fn update_tag_color(
     tag_id: i64,
     color: String,
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<(), BrainDumpError> {
     // Validate color format
     if !color.starts_with('#') || color.len() != 7 {
         return Err(BrainDumpError::Other(
-            "Invalid color format. Use hex color like #3B82F6".to_string()
+            "Invalid color format. Use hex color like #3B82F6".to_string(),
         ));
     }
 
@@ -1017,10 +1075,11 @@ pub async fn update_tag_color(
 /// Get tag usage counts (for tag manager)
 #[tauri::command]
 pub async fn get_tag_usage_counts(
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, BrainDumpError> {
     let db = state.db.lock();
-    let tag_counts = db.get_tag_usage_counts()
+    let tag_counts = db
+        .get_tag_usage_counts()
         .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
 
     // Convert to JSON with tag and count
@@ -1042,11 +1101,11 @@ pub async fn get_tag_usage_counts(
 pub async fn merge_tags(
     source_tag_id: i64,
     target_tag_id: i64,
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<(), BrainDumpError> {
     if source_tag_id == target_tag_id {
         return Err(BrainDumpError::Other(
-            "Cannot merge a tag with itself".to_string()
+            "Cannot merge a tag with itself".to_string(),
         ));
     }
 
@@ -1062,12 +1121,12 @@ pub async fn get_sessions_by_tags(
     tag_ids: Vec<i64>,
     mode: String, // "any" or "all"
     limit: usize,
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<Vec<ChatSession>, BrainDumpError> {
     // Validate mode
     if mode != "any" && mode != "all" {
         return Err(BrainDumpError::Other(
-            "Invalid mode. Use 'any' or 'all'".to_string()
+            "Invalid mode. Use 'any' or 'all'".to_string(),
         ));
     }
 
@@ -1080,13 +1139,13 @@ pub async fn get_sessions_by_tags(
 // Backup System Commands (Issue #14)
 // ============================================================================
 
-use braindump::db::models::{BackupSettings, BackupHistory, BackupStatus};
+use braindump::db::models::{BackupHistory, BackupSettings, BackupStatus};
 use std::path::PathBuf;
 
 /// Create a manual database backup
 #[tauri::command]
 pub async fn create_backup(
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<serde_json::Value, BrainDumpError> {
     braindump::logging::info("Backup", "Manual backup requested");
 
@@ -1135,7 +1194,10 @@ pub async fn create_backup(
         manager.cleanup_old_backups(settings.retention_count as usize)?;
     }
 
-    braindump::logging::info("Backup", &format!("Backup created: {}", backup_info.file_name));
+    braindump::logging::info(
+        "Backup",
+        &format!("Backup created: {}", backup_info.file_name),
+    );
 
     Ok(serde_json::json!({
         "file_path": backup_info.file_path,
@@ -1148,7 +1210,7 @@ pub async fn create_backup(
 /// List all available backups
 #[tauri::command]
 pub async fn list_backups(
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, BrainDumpError> {
     let settings = {
         let db = state.db.lock();
@@ -1165,15 +1227,18 @@ pub async fn list_backups(
     let backups = manager.list_backups()?;
 
     // Convert to JSON
-    let result = backups.iter().map(|b| {
-        serde_json::json!({
-            "file_path": b.file_path,
-            "file_name": b.file_name,
-            "file_size_bytes": b.file_size_bytes,
-            "created_at": b.created_at.to_rfc3339(),
-            "is_automatic": b.is_automatic,
+    let result = backups
+        .iter()
+        .map(|b| {
+            serde_json::json!({
+                "file_path": b.file_path,
+                "file_name": b.file_name,
+                "file_size_bytes": b.file_size_bytes,
+                "created_at": b.created_at.to_rfc3339(),
+                "is_automatic": b.is_automatic,
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(result)
 }
@@ -1182,9 +1247,12 @@ pub async fn list_backups(
 #[tauri::command]
 pub async fn restore_backup(
     backup_path: String,
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<String, BrainDumpError> {
-    braindump::logging::info("Backup", &format!("Restore requested from: {}", backup_path));
+    braindump::logging::info(
+        "Backup",
+        &format!("Restore requested from: {}", backup_path),
+    );
 
     let db_path = dirs::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
@@ -1212,7 +1280,7 @@ pub async fn restore_backup(
 #[tauri::command]
 pub async fn delete_backup(
     backup_path: String,
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<String, BrainDumpError> {
     let db_path = dirs::home_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
@@ -1238,7 +1306,7 @@ pub async fn delete_backup(
 /// Get backup settings
 #[tauri::command]
 pub async fn get_backup_settings(
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<BackupSettings, BrainDumpError> {
     let db = state.db.lock();
     db.get_backup_settings()
@@ -1249,7 +1317,7 @@ pub async fn get_backup_settings(
 #[tauri::command]
 pub async fn update_backup_settings(
     settings: BackupSettings,
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<(), BrainDumpError> {
     braindump::logging::info("Backup", "Updating backup settings");
 
@@ -1262,9 +1330,7 @@ pub async fn update_backup_settings(
 
 /// Get backup status information
 #[tauri::command]
-pub async fn get_backup_status(
-    state: State<'_, AppState>
-) -> Result<BackupStatus, BrainDumpError> {
+pub async fn get_backup_status(state: State<'_, AppState>) -> Result<BackupStatus, BrainDumpError> {
     let db = state.db.lock();
     db.get_backup_status()
         .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))
@@ -1274,7 +1340,7 @@ pub async fn get_backup_status(
 #[tauri::command]
 pub async fn list_backup_history(
     limit: usize,
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<Vec<BackupHistory>, BrainDumpError> {
     let db = state.db.lock();
     db.list_backup_history(limit)
@@ -1285,9 +1351,7 @@ pub async fn list_backup_history(
 
 /// Get the user's language preference
 #[tauri::command]
-pub async fn get_language_preference(
-    state: State<'_, AppState>
-) -> Result<String, BrainDumpError> {
+pub async fn get_language_preference(state: State<'_, AppState>) -> Result<String, BrainDumpError> {
     braindump::logging::info("Language", "Getting language preference");
 
     let db = state.db.lock();
@@ -1299,9 +1363,12 @@ pub async fn get_language_preference(
 #[tauri::command]
 pub async fn set_language_preference(
     language: String,
-    state: State<'_, AppState>
+    state: State<'_, AppState>,
 ) -> Result<(), BrainDumpError> {
-    braindump::logging::info("Language", &format!("Setting language preference to: {}", language));
+    braindump::logging::info(
+        "Language",
+        &format!("Setting language preference to: {}", language),
+    );
 
     // Validate language code
     let valid_languages = vec!["en", "es", "fr", "de", "ja"];

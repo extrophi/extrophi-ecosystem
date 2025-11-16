@@ -1,13 +1,13 @@
+use crate::db::models::{ChatSession, Message};
+use crate::error::BrainDumpError;
+use chrono::Local;
 use std::fs;
 use std::path::PathBuf;
-use crate::error::BrainDumpError;
-use crate::db::models::{ChatSession, Message};
-use chrono::Local;
 
 /// Export a chat session to markdown
 pub fn export_session_to_markdown(
     session: &ChatSession,
-    messages: &[Message]
+    messages: &[Message],
 ) -> Result<PathBuf, BrainDumpError> {
     let markdown = generate_markdown(session, messages);
     let file_path = get_export_path(session)?;
@@ -29,11 +29,15 @@ fn generate_markdown(session: &ChatSession, messages: &[Message]) -> String {
     md.push_str(&format!("# {}\n\n", title));
 
     // Metadata
-    md.push_str(&format!("**Created:** {}\n", session.created_at.format("%Y-%m-%d %H:%M")));
+    md.push_str(&format!(
+        "**Created:** {}\n",
+        session.created_at.format("%Y-%m-%d %H:%M")
+    ));
     md.push_str(&format!("**Messages:** {}\n", messages.len()));
 
     // Calculate word count
-    let word_count: usize = messages.iter()
+    let word_count: usize = messages
+        .iter()
         .map(|m| m.content.split_whitespace().count())
         .sum();
     md.push_str(&format!("**Word Count:** {}\n", word_count));
@@ -62,7 +66,10 @@ fn generate_markdown(session: &ChatSession, messages: &[Message]) -> String {
 
     // Footer
     md.push_str("---\n\n");
-    md.push_str(&format!("**Generated:** {}\n", Local::now().format("%Y-%m-%d %H:%M")));
+    md.push_str(&format!(
+        "**Generated:** {}\n",
+        Local::now().format("%Y-%m-%d %H:%M")
+    ));
     md.push_str("**Tool:** BrainDump v3.0\n");
 
     md
@@ -90,7 +97,7 @@ fn sanitize_filename(title: &str) -> String {
         .map(|c| match c {
             'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' => c,
             ' ' => '_',
-            _ => '-'
+            _ => '-',
         })
         .collect::<String>()
         .chars()
@@ -104,7 +111,10 @@ mod tests {
 
     #[test]
     fn test_sanitize_filename() {
-        assert_eq!(sanitize_filename("Brain Dump 2025-11-15"), "Brain_Dump_2025-11-15");
+        assert_eq!(
+            sanitize_filename("Brain Dump 2025-11-15"),
+            "Brain_Dump_2025-11-15"
+        );
         assert_eq!(sanitize_filename("Test: Session!"), "Test-_Session-");
     }
 }

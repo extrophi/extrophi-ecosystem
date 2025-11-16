@@ -3,7 +3,7 @@
 
 use crate::error::{OpenAiApiError, Result};
 use parking_lot::Mutex;
-use reqwest::{Client, header};
+use reqwest::{header, Client};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -150,12 +150,10 @@ impl OpenAiClient {
         let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USERNAME)
             .map_err(|e| OpenAiApiError::KeyringError(e.to_string()))?;
 
-        entry
-            .get_password()
-            .map_err(|e| match e {
-                keyring::Error::NoEntry => OpenAiApiError::ApiKeyNotFound.into(),
-                _ => OpenAiApiError::KeyringError(e.to_string()).into(),
-            })
+        entry.get_password().map_err(|e| match e {
+            keyring::Error::NoEntry => OpenAiApiError::ApiKeyNotFound.into(),
+            _ => OpenAiApiError::KeyringError(e.to_string()).into(),
+        })
     }
 
     /// Delete API key from system keyring
@@ -182,7 +180,9 @@ impl OpenAiClient {
             Ok(_) => Ok(true),
             Err(e) => match e {
                 crate::error::BrainDumpError::OpenAiApi(OpenAiApiError::InvalidApiKey) => Ok(false),
-                crate::error::BrainDumpError::OpenAiApi(OpenAiApiError::ApiKeyNotFound) => Ok(false),
+                crate::error::BrainDumpError::OpenAiApi(OpenAiApiError::ApiKeyNotFound) => {
+                    Ok(false)
+                }
                 _ => Err(e),
             },
         }
@@ -240,7 +240,10 @@ impl OpenAiClient {
                 401 => OpenAiApiError::InvalidApiKey.into(),
                 429 => OpenAiApiError::RateLimitExceeded.into(),
                 _ => {
-                    let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                    let error_text = response
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Unknown error".to_string());
                     OpenAiApiError::RequestFailed(format!("HTTP {}: {}", status, error_text)).into()
                 }
             });

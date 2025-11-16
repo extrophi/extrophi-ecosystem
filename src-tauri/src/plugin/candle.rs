@@ -143,7 +143,9 @@ impl TranscriptionPlugin for CandlePlugin {
             segments: vec![TranscriptSegment {
                 start_ms: 0,
                 end_ms: duration_ms,
-                text: "Candle plugin architecture validated. Full Whisper model integration pending.".to_string(),
+                text:
+                    "Candle plugin architecture validated. Full Whisper model integration pending."
+                        .to_string(),
                 confidence: 1.0,
             }],
         })

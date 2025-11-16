@@ -2,10 +2,10 @@
 
 use super::models::*;
 use chrono::Utc;
-use rusqlite::{Connection, Result as SqliteResult, params, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, Result as SqliteResult};
 
 // Import usage statistics models
-use super::models::{UsageEvent, UsageStats, ProviderUsage, PromptUsage};
+use super::models::{PromptUsage, ProviderUsage, UsageEvent, UsageStats};
 
 // Import tagging models
 use super::models::Tag;
@@ -81,7 +81,8 @@ impl Repository {
     }
 
     pub fn delete_recording(&self, id: i64) -> SqliteResult<()> {
-        self.conn.execute("DELETE FROM recordings WHERE id = ?1", params![id])?;
+        self.conn
+            .execute("DELETE FROM recordings WHERE id = ?1", params![id])?;
         Ok(())
     }
 
@@ -124,7 +125,10 @@ impl Repository {
         )
     }
 
-    pub fn list_transcripts_by_recording(&self, recording_id: i64) -> SqliteResult<Vec<Transcript>> {
+    pub fn list_transcripts_by_recording(
+        &self,
+        recording_id: i64,
+    ) -> SqliteResult<Vec<Transcript>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, recording_id, text, language, confidence, plugin_name, transcription_duration_ms, created_at
              FROM transcripts WHERE recording_id = ?1 ORDER BY created_at DESC"
@@ -166,7 +170,7 @@ impl Repository {
     pub fn list_segments_by_transcript(&self, transcript_id: i64) -> SqliteResult<Vec<Segment>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, transcript_id, start_ms, end_ms, text, confidence
-             FROM segments WHERE transcript_id = ?1 ORDER BY start_ms"
+             FROM segments WHERE transcript_id = ?1 ORDER BY start_ms",
         )?;
 
         let segments = stmt.query_map(params![transcript_id], |row| {
@@ -216,7 +220,7 @@ impl Repository {
     pub fn list_chat_sessions(&self, limit: usize) -> SqliteResult<Vec<ChatSession>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, title, created_at, updated_at
-             FROM chat_sessions ORDER BY updated_at DESC LIMIT ?1"
+             FROM chat_sessions ORDER BY updated_at DESC LIMIT ?1",
         )?;
 
         let sessions = stmt.query_map(params![limit], |row| {
@@ -240,14 +244,17 @@ impl Repository {
     }
 
     pub fn delete_chat_session(&self, id: i64) -> SqliteResult<()> {
-        self.conn.execute("DELETE FROM chat_sessions WHERE id = ?1", params![id])?;
+        self.conn
+            .execute("DELETE FROM chat_sessions WHERE id = ?1", params![id])?;
         Ok(())
     }
 
     // ===== Messages (C2) =====
 
     pub fn create_message(&self, msg: &Message) -> SqliteResult<i64> {
-        let privacy_tags_json = msg.privacy_tags.as_ref()
+        let privacy_tags_json = msg
+            .privacy_tags
+            .as_ref()
             .map(|tags| serde_json::to_string(tags).unwrap_or_default());
 
         self.conn.execute(
@@ -268,13 +275,12 @@ impl Repository {
     pub fn list_messages_by_session(&self, session_id: i64) -> SqliteResult<Vec<Message>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, session_id, recording_id, role, content, privacy_tags, created_at
-             FROM messages WHERE session_id = ?1 ORDER BY created_at ASC"
+             FROM messages WHERE session_id = ?1 ORDER BY created_at ASC",
         )?;
 
         let messages = stmt.query_map(params![session_id], |row| {
             let privacy_tags_str: Option<String> = row.get(5)?;
-            let privacy_tags = privacy_tags_str
-                .and_then(|s| serde_json::from_str(&s).ok());
+            let privacy_tags = privacy_tags_str.and_then(|s| serde_json::from_str(&s).ok());
 
             Ok(Message {
                 id: Some(row.get(0)?),
@@ -328,7 +334,7 @@ impl Repository {
     pub fn list_prompt_templates(&self) -> SqliteResult<Vec<PromptTemplate>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, system_prompt, description, is_default, created_at
-             FROM prompt_templates ORDER BY name ASC"
+             FROM prompt_templates ORDER BY name ASC",
         )?;
 
         let templates = stmt.query_map([], |row| {
@@ -366,11 +372,14 @@ impl Repository {
     // ===== App Settings (Metadata) =====
 
     pub fn get_app_setting(&self, key: &str) -> SqliteResult<Option<String>> {
-        let result = self.conn.query_row(
-            "SELECT value FROM metadata WHERE key = ?1",
-            params![key],
-            |row| row.get(0),
-        ).optional()?;
+        let result = self
+            .conn
+            .query_row(
+                "SELECT value FROM metadata WHERE key = ?1",
+                params![key],
+                |row| row.get(0),
+            )
+            .optional()?;
 
         Ok(result)
     }
@@ -416,7 +425,7 @@ impl Repository {
     pub fn list_user_prompts(&self) -> SqliteResult<Vec<Prompt>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, title, content, is_system, created_at, updated_at
-             FROM prompts ORDER BY is_system DESC, created_at DESC"
+             FROM prompts ORDER BY is_system DESC, created_at DESC",
         )?;
 
         let prompts = stmt.query_map([], |row| {
@@ -478,7 +487,7 @@ impl Repository {
         self.conn.execute(
             "INSERT INTO prompts (name, title, content, is_system, created_at, updated_at)
              VALUES (?1, ?2, ?3, 0, ?4, ?5)",
-            params![name, title, content, now.to_rfc3339(), now.to_rfc3339()]
+            params![name, title, content, now.to_rfc3339(), now.to_rfc3339()],
         )?;
 
         Ok(self.conn.last_insert_rowid())
@@ -491,16 +500,18 @@ impl Repository {
         let is_system: i64 = self.conn.query_row(
             "SELECT is_system FROM prompts WHERE id = ?1",
             params![id],
-            |row| row.get(0)
+            |row| row.get(0),
         )?;
 
         if is_system == 1 {
-            return Err(rusqlite::Error::InvalidParameterName("Cannot modify system prompts".to_string()));
+            return Err(rusqlite::Error::InvalidParameterName(
+                "Cannot modify system prompts".to_string(),
+            ));
         }
 
         self.conn.execute(
             "UPDATE prompts SET title = ?1, content = ?2, updated_at = ?3 WHERE id = ?4",
-            params![title, content, now.to_rfc3339(), id]
+            params![title, content, now.to_rfc3339(), id],
         )
     }
 
@@ -509,14 +520,17 @@ impl Repository {
         let is_system: i64 = self.conn.query_row(
             "SELECT is_system FROM prompts WHERE id = ?1",
             params![id],
-            |row| row.get(0)
+            |row| row.get(0),
         )?;
 
         if is_system == 1 {
-            return Err(rusqlite::Error::InvalidParameterName("Cannot delete system prompts".to_string()));
+            return Err(rusqlite::Error::InvalidParameterName(
+                "Cannot delete system prompts".to_string(),
+            ));
         }
 
-        self.conn.execute("DELETE FROM prompts WHERE id = ?1", params![id])
+        self.conn
+            .execute("DELETE FROM prompts WHERE id = ?1", params![id])
     }
 
     // ===== Usage Statistics (Issue #10) =====
@@ -544,7 +558,7 @@ impl Repository {
     pub fn list_tags(&self) -> SqliteResult<Vec<Tag>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, color, created_at
-             FROM tags ORDER BY name ASC"
+             FROM tags ORDER BY name ASC",
         )?;
 
         let tags = stmt.query_map([], |row| {
@@ -582,7 +596,7 @@ impl Repository {
 
         self.conn.execute(
             "INSERT INTO tags (name, color, created_at) VALUES (?1, ?2, ?3)",
-            params![name, color, now.to_rfc3339()]
+            params![name, color, now.to_rfc3339()],
         )?;
 
         Ok(self.conn.last_insert_rowid())
@@ -592,7 +606,7 @@ impl Repository {
     pub fn rename_tag(&self, tag_id: i64, new_name: &str) -> SqliteResult<usize> {
         self.conn.execute(
             "UPDATE tags SET name = ?1 WHERE id = ?2",
-            params![new_name, tag_id]
+            params![new_name, tag_id],
         )
     }
 
@@ -600,13 +614,14 @@ impl Repository {
     pub fn update_tag_color(&self, tag_id: i64, color: &str) -> SqliteResult<usize> {
         self.conn.execute(
             "UPDATE tags SET color = ?1 WHERE id = ?2",
-            params![color, tag_id]
+            params![color, tag_id],
         )
     }
 
     /// Delete a tag (will cascade to session_tags)
     pub fn delete_tag(&self, tag_id: i64) -> SqliteResult<usize> {
-        self.conn.execute("DELETE FROM tags WHERE id = ?1", params![tag_id])
+        self.conn
+            .execute("DELETE FROM tags WHERE id = ?1", params![tag_id])
     }
 
     /// Add a tag to a session
@@ -616,7 +631,7 @@ impl Repository {
         self.conn.execute(
             "INSERT OR IGNORE INTO session_tags (session_id, tag_id, created_at)
              VALUES (?1, ?2, ?3)",
-            params![session_id, tag_id, now.to_rfc3339()]
+            params![session_id, tag_id, now.to_rfc3339()],
         )
     }
 
@@ -624,7 +639,7 @@ impl Repository {
     pub fn remove_tag_from_session(&self, session_id: i64, tag_id: i64) -> SqliteResult<usize> {
         self.conn.execute(
             "DELETE FROM session_tags WHERE session_id = ?1 AND tag_id = ?2",
-            params![session_id, tag_id]
+            params![session_id, tag_id],
         )
     }
 
@@ -635,7 +650,7 @@ impl Repository {
              FROM tags t
              INNER JOIN session_tags st ON t.id = st.tag_id
              WHERE st.session_id = ?1
-             ORDER BY t.name ASC"
+             ORDER BY t.name ASC",
         )?;
 
         let tags = stmt.query_map(params![session_id], |row| {
@@ -652,7 +667,12 @@ impl Repository {
 
     /// Get sessions filtered by tags
     /// mode: "any" (has any of these tags) or "all" (has all of these tags)
-    pub fn get_sessions_by_tags(&self, tag_ids: &[i64], mode: &str, limit: usize) -> SqliteResult<Vec<ChatSession>> {
+    pub fn get_sessions_by_tags(
+        &self,
+        tag_ids: &[i64],
+        mode: &str,
+        limit: usize,
+    ) -> SqliteResult<Vec<ChatSession>> {
         if tag_ids.is_empty() {
             return self.list_chat_sessions(limit);
         }
@@ -698,7 +718,8 @@ impl Repository {
         }
         params_vec.push(Box::new(limit as i64));
 
-        let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+        let params_refs: Vec<&dyn rusqlite::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
 
         // Single query_map call to avoid closure type mismatch
         let sessions = stmt.query_map(&*params_refs, |row| {
@@ -720,7 +741,7 @@ impl Repository {
              FROM tags t
              LEFT JOIN session_tags st ON t.id = st.tag_id
              GROUP BY t.id, t.name, t.color, t.created_at
-             ORDER BY usage_count DESC, t.name ASC"
+             ORDER BY usage_count DESC, t.name ASC",
         )?;
 
         let results = stmt.query_map([], |row| {
@@ -731,7 +752,7 @@ impl Repository {
                     color: row.get(2)?,
                     created_at: row.get::<_, String>(3)?.parse().unwrap_or(Utc::now()),
                 },
-                row.get(4)?
+                row.get(4)?,
             ))
         })?;
 
@@ -746,7 +767,7 @@ impl Repository {
              SELECT session_id, ?1, created_at
              FROM session_tags
              WHERE tag_id = ?2",
-            params![target_tag_id, source_tag_id]
+            params![target_tag_id, source_tag_id],
         )?;
 
         // Delete the source tag (will cascade delete old session_tags)
@@ -758,32 +779,31 @@ impl Repository {
     /// Get usage statistics
     pub fn get_usage_stats(&self) -> SqliteResult<UsageStats> {
         // Get total sessions
-        let total_sessions: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM chat_sessions",
-            [],
-            |row| row.get(0)
-        )?;
+        let total_sessions: i64 =
+            self.conn
+                .query_row("SELECT COUNT(*) FROM chat_sessions", [], |row| row.get(0))?;
 
         // Get total messages (user messages only)
         let total_messages: i64 = self.conn.query_row(
             "SELECT COUNT(*) FROM messages WHERE role = 'user'",
             [],
-            |row| row.get(0)
+            |row| row.get(0),
         )?;
 
         // Get total recordings
-        let total_recordings: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM recordings",
-            [],
-            |row| row.get(0)
-        )?;
+        let total_recordings: i64 =
+            self.conn
+                .query_row("SELECT COUNT(*) FROM recordings", [], |row| row.get(0))?;
 
         // Get total recording time
-        let total_recording_time_ms: i64 = self.conn.query_row(
-            "SELECT COALESCE(SUM(duration_ms), 0) FROM recordings",
-            [],
-            |row| row.get(0)
-        ).unwrap_or(0);
+        let total_recording_time_ms: i64 = self
+            .conn
+            .query_row(
+                "SELECT COALESCE(SUM(duration_ms), 0) FROM recordings",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
 
         // Get provider usage
         let openai_count: i64 = self.conn.query_row(
@@ -804,10 +824,14 @@ impl Repository {
             claude_count,
             openai_percent: if total_provider_calls > 0 {
                 (openai_count as f64 / total_provider_calls as f64) * 100.0
-            } else { 0.0 },
+            } else {
+                0.0
+            },
             claude_percent: if total_provider_calls > 0 {
                 (claude_count as f64 / total_provider_calls as f64) * 100.0
-            } else { 0.0 },
+            } else {
+                0.0
+            },
         };
 
         // Estimate API costs
@@ -826,31 +850,40 @@ impl Repository {
              WHERE event_type = 'prompt_used' AND prompt_name IS NOT NULL
              GROUP BY prompt_name
              ORDER BY usage_count DESC
-             LIMIT 5"
+             LIMIT 5",
         )?;
 
-        let top_prompts = stmt.query_map([], |row| {
-            Ok(PromptUsage {
-                name: row.get(0)?,
-                count: row.get(1)?,
-            })
-        })?.collect::<SqliteResult<Vec<_>>>().unwrap_or_default();
+        let top_prompts = stmt
+            .query_map([], |row| {
+                Ok(PromptUsage {
+                    name: row.get(0)?,
+                    count: row.get(1)?,
+                })
+            })?
+            .collect::<SqliteResult<Vec<_>>>()
+            .unwrap_or_default();
 
         // Get sessions this week
-        let sessions_this_week: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM chat_sessions
+        let sessions_this_week: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM chat_sessions
              WHERE created_at >= datetime('now', '-7 days')",
-            [],
-            |row| row.get(0)
-        ).unwrap_or(0);
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
 
         // Get sessions this month
-        let sessions_this_month: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM chat_sessions
+        let sessions_this_month: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM chat_sessions
              WHERE created_at >= datetime('now', 'start of month')",
-            [],
-            |row| row.get(0)
-        ).unwrap_or(0);
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
 
         Ok(UsageStats {
             total_sessions,
@@ -960,7 +993,7 @@ impl Repository {
     pub fn list_backup_history(&self, limit: usize) -> SqliteResult<Vec<BackupHistory>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, file_path, file_size_bytes, created_at, is_automatic, status, error_message
-             FROM backup_history ORDER BY created_at DESC LIMIT ?1"
+             FROM backup_history ORDER BY created_at DESC LIMIT ?1",
         )?;
 
         let backups = stmt.query_map(params![limit], |row| {
@@ -983,11 +1016,14 @@ impl Repository {
         let settings = self.get_backup_settings()?;
 
         // Count total backups
-        let total_backups: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM backup_history WHERE status = 'success'",
-            [],
-            |row| row.get(0)
-        ).unwrap_or(0);
+        let total_backups: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM backup_history WHERE status = 'success'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
 
         // Calculate total backup size
         let total_backup_size_bytes: i64 = self.conn.query_row(
@@ -1010,13 +1046,13 @@ impl Repository {
 
         // Calculate next backup due time
         let next_backup_due = if settings.enabled {
-            settings.last_backup_at.map(|last| {
-                match settings.frequency.as_str() {
+            settings
+                .last_backup_at
+                .map(|last| match settings.frequency.as_str() {
                     "daily" => last + chrono::Duration::days(1),
                     "weekly" => last + chrono::Duration::weeks(1),
                     _ => last,
-                }
-            })
+                })
         } else {
             None
         };
@@ -1143,7 +1179,8 @@ mod tests {
         assert_eq!(fetched.title, Some("Test Session".to_string()));
 
         // Update title
-        repo.update_chat_session_title(session_id, "Updated Title").unwrap();
+        repo.update_chat_session_title(session_id, "Updated Title")
+            .unwrap();
         let updated = repo.get_chat_session(session_id).unwrap();
         assert_eq!(updated.title, Some("Updated Title".to_string()));
 
@@ -1210,7 +1247,9 @@ mod tests {
         assert_eq!(templates.len(), 2);
 
         // Get by name
-        let daily = repo.get_prompt_template_by_name("daily_reflection").unwrap();
+        let daily = repo
+            .get_prompt_template_by_name("daily_reflection")
+            .unwrap();
         assert!(daily.is_default);
 
         let crisis = repo.get_prompt_template_by_name("crisis_support").unwrap();

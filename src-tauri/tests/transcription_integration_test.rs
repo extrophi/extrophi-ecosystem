@@ -3,7 +3,7 @@
 
 #![cfg(feature = "whisper")]
 
-use braindump::plugin::{whisper_cpp::WhisperCppPlugin, TranscriptionPlugin, AudioData};
+use braindump::plugin::{whisper_cpp::WhisperCppPlugin, AudioData, TranscriptionPlugin};
 use hound::WavReader;
 use std::path::Path;
 use std::time::Instant;
@@ -21,7 +21,10 @@ fn test_transcription_with_real_audio() {
     // Skip if test audio not available
     let test_file = "../test-qa-final.wav";
     if !Path::new(test_file).exists() {
-        println!("Skipping test - test-qa-final.wav not found at {}", test_file);
+        println!(
+            "Skipping test - test-qa-final.wav not found at {}",
+            test_file
+        );
         println!("Current dir: {:?}", std::env::current_dir().unwrap());
         return;
     }
@@ -31,8 +34,7 @@ fn test_transcription_with_real_audio() {
 
     // Load audio
     println!("Loading audio file: {}", test_file);
-    let mut reader = WavReader::open(test_file)
-        .expect("Failed to open test audio file");
+    let mut reader = WavReader::open(test_file).expect("Failed to open test audio file");
 
     let spec = reader.spec();
     println!("  Sample rate: {} Hz", spec.sample_rate);
@@ -40,7 +42,8 @@ fn test_transcription_with_real_audio() {
     println!("  Bits per sample: {}", spec.bits_per_sample);
 
     // Convert to f32 samples
-    let samples: Vec<f32> = reader.samples::<i16>()
+    let samples: Vec<f32> = reader
+        .samples::<i16>()
         .map(|s| s.unwrap() as f32 / i16::MAX as f32)
         .collect();
 
@@ -61,7 +64,8 @@ fn test_transcription_with_real_audio() {
     let mut plugin = WhisperCppPlugin::new(model_path.to_string());
 
     let init_start = Instant::now();
-    plugin.initialize()
+    plugin
+        .initialize()
         .expect("Failed to initialize Whisper plugin");
     let init_duration = init_start.elapsed();
     println!("  Model initialized in {:.3}s", init_duration.as_secs_f32());
@@ -70,15 +74,21 @@ fn test_transcription_with_real_audio() {
     // Transcribe
     println!("Transcribing audio...");
     let transcribe_start = Instant::now();
-    let transcript = plugin.transcribe(&audio)
+    let transcript = plugin
+        .transcribe(&audio)
         .expect("Transcription failed - this should not happen if libraries are linked correctly!");
     let transcribe_duration = transcribe_start.elapsed();
 
     println!("");
     println!("=== RESULTS ===");
-    println!("Transcription time: {:.3}s", transcribe_duration.as_secs_f32());
-    println!("Speed factor: {:.1}x faster than real-time",
-        duration_sec / transcribe_duration.as_secs_f32());
+    println!(
+        "Transcription time: {:.3}s",
+        transcribe_duration.as_secs_f32()
+    );
+    println!(
+        "Speed factor: {:.1}x faster than real-time",
+        duration_sec / transcribe_duration.as_secs_f32()
+    );
     println!("");
     println!("Transcribed text:");
     println!("---");
@@ -90,8 +100,14 @@ fn test_transcription_with_real_audio() {
     }
 
     // Assertions
-    assert!(!transcript.text.is_empty(), "Transcript should not be empty");
-    assert!(transcript.segments.len() > 0, "Should have at least one segment");
+    assert!(
+        !transcript.text.is_empty(),
+        "Transcript should not be empty"
+    );
+    assert!(
+        transcript.segments.len() > 0,
+        "Should have at least one segment"
+    );
 
     println!("");
     println!("✓ TEST PASSED: Transcription completed successfully");
@@ -118,8 +134,7 @@ fn test_plugin_initialization() {
     assert_eq!(plugin.version(), "1.8.2");
     assert!(!plugin.is_initialized());
 
-    plugin.initialize()
-        .expect("Plugin initialization failed");
+    plugin.initialize().expect("Plugin initialization failed");
 
     assert!(plugin.is_initialized());
 
