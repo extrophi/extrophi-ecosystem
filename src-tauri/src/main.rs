@@ -2,7 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use braindump::{
-    audio, db, plugin, AppState, AudioCommand, AudioResponse, ClaudeClient, OpenAiClient,
+    audio, db, plugin, services, AppState, AudioCommand, AudioResponse, ClaudeClient, OpenAiClient,
 };
 use parking_lot::Mutex;
 use std::sync::{mpsc, Arc};
@@ -462,6 +462,14 @@ fn main() {
             // Language Preference Commands (Issue #12)
             commands::get_language_preference,
             commands::set_language_preference,
+            // Model Manager Commands
+            services::model_manager::get_available_models,
+            services::model_manager::get_installed_models,
+            services::model_manager::download_model,
+            services::model_manager::delete_model,
+            // VAD Preprocessing Commands
+            services::vad::preprocess_audio_with_vad,
+            services::vad::detect_speech_segments,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

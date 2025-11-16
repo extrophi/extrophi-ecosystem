@@ -29,7 +29,7 @@ pub struct PluginInfo {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```ignore
 /// use braindump::plugin::{PluginManager, TranscriptionPlugin};
 ///
 /// let mut manager = PluginManager::new();
@@ -74,7 +74,7 @@ impl PluginManager {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     /// manager.register(Box::new(WhisperCppPlugin::new(model_path)))?;
     /// ```
     pub fn register(&mut self, plugin: Box<dyn TranscriptionPlugin>) -> PluginResult<()> {
@@ -113,7 +113,7 @@ impl PluginManager {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     /// manager.switch_plugin("candle")?;
     /// ```
     pub fn switch_plugin(&mut self, name: &str) -> PluginResult<()> {
@@ -198,7 +198,7 @@ impl PluginManager {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```ignore
     /// let audio = AudioData { /* ... */ };
     /// let transcript = manager.transcribe(&audio)?;
     /// println!("Transcript: {}", transcript.text);

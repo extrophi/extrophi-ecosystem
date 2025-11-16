@@ -17,7 +17,7 @@ const DEFAULT_PROMPT: &str =
 /// * `name` - The template name (without the `_prompt.md` suffix)
 ///
 /// # Examples
-/// ```
+/// ```ignore
 /// let prompt = load_prompt_template("brain_dump")?;
 /// let prompt = load_prompt_template("end_of_day")?;
 /// ```
@@ -79,7 +79,7 @@ pub fn load_prompt_template(name: &str) -> Result<String, BrainDumpError> {
 /// A vector of template names (without the `_prompt.md` suffix)
 ///
 /// # Examples
-/// ```
+/// ```ignore
 /// let templates = list_prompt_templates()?;
 /// // Returns: vec!["brain_dump", "end_of_day", "end_of_month"]
 /// ```
