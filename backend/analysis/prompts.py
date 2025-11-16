@@ -50,7 +50,8 @@ Respond in JSON format:
 }}
 """
 
-PATTERN_DETECTION_PROMPT = """Compare these content pieces from the same author and identify patterns:
+PATTERN_DETECTION_PROMPT = """Compare these content pieces from the same author \
+and identify patterns:
 
 Content pieces:
 {content_list}
