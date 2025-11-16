@@ -1,4 +1,5 @@
 """Reddit scraper using PRAW implementing BaseScraper interface."""
+
 import os
 from datetime import datetime
 from typing import Any
@@ -29,9 +30,7 @@ class RedditScraper(BaseScraper):
         self.reddit = praw.Reddit(
             client_id=os.getenv("REDDIT_CLIENT_ID", ""),
             client_secret=os.getenv("REDDIT_CLIENT_SECRET", ""),
-            user_agent=os.getenv(
-                "REDDIT_USER_AGENT", "IAC-032-unified-scraper/1.0"
-            ),
+            user_agent=os.getenv("REDDIT_USER_AGENT", "IAC-032-unified-scraper/1.0"),
         )
 
     async def health_check(self) -> dict[str, Any]:
@@ -85,9 +84,7 @@ class RedditScraper(BaseScraper):
                     "id": submission.id,
                     "title": submission.title,
                     "selftext": submission.selftext,
-                    "author": str(submission.author)
-                    if submission.author
-                    else "[deleted]",
+                    "author": str(submission.author) if submission.author else "[deleted]",
                     "subreddit": str(submission.subreddit),
                     "created_utc": submission.created_utc,
                     "score": submission.score,

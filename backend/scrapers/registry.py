@@ -1,4 +1,5 @@
 """Scraper registry for platform adapters."""
+
 from typing import Type
 
 from backend.scrapers.base import BaseScraper

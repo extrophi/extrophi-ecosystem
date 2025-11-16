@@ -1,5 +1,4 @@
 """Tests for FastAPI endpoints."""
-
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -28,14 +27,18 @@ class TestScrapeEndpoints:
     """Test scraping endpoints."""
 
     @patch("backend.api.routes.scrape.get_scraper")
-    def test_scrape_invalid_platform(self, mock_get_scraper: MagicMock, client: TestClient) -> None:
+    def test_scrape_invalid_platform(
+        self, mock_get_scraper: MagicMock, client: TestClient
+    ) -> None:
         """Test scraping with invalid platform."""
         response = client.post("/scrape/invalid", json={"target": "test", "limit": 10})
         assert response.status_code == 400
         assert "Invalid platform" in response.json()["detail"]
 
     @patch("backend.api.routes.scrape.get_scraper")
-    def test_scrape_twitter(self, mock_get_scraper: MagicMock, client: TestClient) -> None:
+    def test_scrape_twitter(
+        self, mock_get_scraper: MagicMock, client: TestClient
+    ) -> None:
         """Test Twitter scraping endpoint."""
         mock_scraper = AsyncMock()
         mock_scraper.health_check.return_value = {"status": "ok"}
@@ -43,7 +46,9 @@ class TestScrapeEndpoints:
         mock_scraper.normalize.return_value = MagicMock(content_id="uuid-123")
         mock_get_scraper.return_value = mock_scraper
 
-        response = client.post("/scrape/twitter", json={"target": "@testuser", "limit": 10})
+        response = client.post(
+            "/scrape/twitter", json={"target": "@testuser", "limit": 10}
+        )
         assert response.status_code == 200
         assert response.json()["platform"] == "twitter"
 
@@ -73,6 +78,8 @@ class TestQueryEndpoints:
         }
         mock_chroma.return_value = mock_chroma_instance
 
-        response = client.post("/query/rag", json={"prompt": "focus systems", "n_results": 5})
+        response = client.post(
+            "/query/rag", json={"prompt": "focus systems", "n_results": 5}
+        )
         assert response.status_code == 200
         assert response.json()["count"] == 2

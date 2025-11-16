@@ -1,11 +1,12 @@
 """Content analyzer using OpenAI GPT-4."""
+
 import json
 import os
 import re
 from datetime import datetime
 from typing import Any
 
-import openai
+from openai import OpenAI
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
@@ -23,7 +24,7 @@ class ContentAnalyzer:
     """
 
     def __init__(self) -> None:
-        openai.api_key = OPENAI_API_KEY
+        self.client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
         self.model = "gpt-4"
         self.max_tokens = 2000
 
@@ -42,12 +43,22 @@ class ContentAnalyzer:
         prompt = ANALYSIS_PROMPTS["framework_extraction"].format(content=content)
 
         try:
-            response = openai.ChatCompletion.create(
+            if not self.client:
+                return {
+                    "error": "OpenAI API key not configured",
+                    "analyzed_at": datetime.utcnow().isoformat(),
+                    "model_used": self.model,
+                }
+
+            response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are an expert copywriting analyst. Always respond with valid JSON.",
+                        "content": (
+                            "You are an expert copywriting analyst. "
+                            "Always respond with valid JSON."
+                        ),
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -105,12 +116,21 @@ class ContentAnalyzer:
         prompt = ANALYSIS_PROMPTS["pattern_detection"].format(content_list=formatted_content)
 
         try:
-            response = openai.ChatCompletion.create(
+            if not self.client:
+                return {
+                    "error": "OpenAI API key not configured",
+                    "analyzed_at": datetime.utcnow().isoformat(),
+                }
+
+            response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are an expert at identifying content patterns. Always respond with valid JSON.",
+                        "content": (
+                            "You are an expert at identifying content patterns. "
+                            "Always respond with valid JSON."
+                        ),
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -140,8 +160,14 @@ class ContentAnalyzer:
     def health_check(self) -> dict[str, Any]:
         """Check OpenAI API connectivity."""
         try:
+            if not self.client:
+                return {
+                    "status": "error",
+                    "message": "OpenAI API key not configured",
+                    "model": self.model,
+                }
             # Quick test
-            openai.ChatCompletion.create(
+            self.client.chat.completions.create(
                 model="gpt-3.5-turbo",  # Cheaper for health check
                 messages=[{"role": "user", "content": "test"}],
                 max_tokens=5,

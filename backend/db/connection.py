@@ -28,8 +28,8 @@ def get_engine():
 def get_session() -> Generator[Session, None, None]:
     """Dependency for FastAPI endpoints to get database session"""
     engine = get_engine()
-    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    db = SessionLocal()
+    session_local = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = session_local()
     try:
         yield db
     finally:

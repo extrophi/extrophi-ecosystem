@@ -1,7 +1,6 @@
 """Web/Blog scraper using Jina.ai Reader API implementing BaseScraper interface."""
-import os
+
 from datetime import datetime
-from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -34,9 +33,7 @@ class WebScraper(BaseScraper):
         """Verify Jina.ai API access."""
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.jina_base_url}https://example.com", timeout=10
-                )
+                response = await client.get(f"{self.jina_base_url}https://example.com", timeout=10)
                 if response.status_code == 200:
                     return {
                         "status": "ok",
@@ -44,7 +41,7 @@ class WebScraper(BaseScraper):
                         "timestamp": datetime.utcnow().isoformat(),
                         "platform": "web",
                     }
-        except Exception as e:
+        except Exception:
             pass
 
         return {

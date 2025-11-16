@@ -1,7 +1,6 @@
 """Twitter/X scraper implementing BaseScraper interface."""
-import os
+
 from datetime import datetime
-from typing import Any
 
 from playwright.async_api import Browser, Page, async_playwright
 
@@ -61,9 +60,7 @@ class TwitterScraper(BaseScraper):
             page = await context.new_page()
 
             # Navigate to profile
-            await page.goto(
-                f"https://twitter.com/{username}", wait_until="networkidle"
-            )
+            await page.goto(f"https://twitter.com/{username}", wait_until="networkidle")
 
             # Scroll and collect tweets
             for _ in range(min(limit // 5, 10)):
@@ -71,9 +68,7 @@ class TwitterScraper(BaseScraper):
                 await page.wait_for_timeout(1000)
 
             # Extract tweet elements
-            tweet_elements = await page.query_selector_all(
-                'article[data-testid="tweet"]'
-            )
+            tweet_elements = await page.query_selector_all('article[data-testid="tweet"]')
 
             for element in tweet_elements[:limit]:
                 try:
