@@ -1,0 +1,95 @@
+# IAC-032 Unified Scraper - Podman Compose
+# Full stack: PostgreSQL + pgvector, Redis, ChromaDB, FastAPI Core
+
+version: "3.8"
+
+services:
+  # PostgreSQL 16 with pgvector extension
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: unified_postgres
+    environment:
+      POSTGRES_DB: unified_scraper
+      POSTGRES_USER: scraper
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-scraper_pass}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scraper -d unified_scraper"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis for job queue
+  redis:
+    image: redis:7-alpine
+    container_name: unified_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ChromaDB for vector storage
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: unified_chromadb
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      IS_PERSISTENT: "TRUE"
+      PERSIST_DIRECTORY: "/chroma/chroma"
+      ANONYMIZED_TELEMETRY: "FALSE"
+    restart: unless-stopped
+
+  # Core FastAPI Engine
+  core_engine:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: unified_core
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://scraper:${DB_PASSWORD:-scraper_pass}@postgres:5432/unified_scraper
+      REDIS_URL: redis://redis:6379
+      CHROMA_HOST: chromadb
+      CHROMA_PORT: 8000
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      SCRAPERAPI_KEY: ${SCRAPERAPI_KEY}
+      JINA_API_KEY: ${JINA_API_KEY}
+      REDDIT_CLIENT_ID: ${REDDIT_CLIENT_ID}
+      REDDIT_CLIENT_SECRET: ${REDDIT_CLIENT_SECRET}
+      REDDIT_USER_AGENT: "IAC032Scraper/1.0"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
+    volumes:
+      - ./output:/app/output
+      - ./data/twitter_profiles:/app/data/twitter_profiles
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  chroma_data:
+    driver: local
