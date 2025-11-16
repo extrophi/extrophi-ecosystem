@@ -71,7 +71,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(version, "1");
+        assert_eq!(version, "7");  // Updated schema version after migrations
     }
 
     #[test]
