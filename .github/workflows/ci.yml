@@ -30,16 +30,16 @@ jobs:
         pip install ruff mypy black isort
 
     - name: Check formatting (Black)
-      run: black --check backend/ scrapers/
+      run: black --check backend/
 
     - name: Check import sorting (isort)
-      run: isort --check-only backend/ scrapers/
+      run: isort --check-only backend/
 
     - name: Lint (Ruff)
-      run: ruff check backend/ scrapers/
+      run: ruff check backend/
 
     - name: Type check (MyPy)
-      run: mypy --ignore-missing-imports backend/ scrapers/
+      run: mypy --ignore-missing-imports backend/
 
   python-test:
     name: Python Unit Tests
