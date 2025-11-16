@@ -5,7 +5,16 @@
   import PrivacyPanel from './components/PrivacyPanel.svelte';
   import TemplateSelector from './components/TemplateSelector.svelte';
   import SettingsPanel from './components/SettingsPanel.svelte';
+  import ChatPanel from './components/ChatPanel.svelte';
+  import ChatView from './lib/components/ChatView.svelte';
+  import PromptManager from './lib/components/PromptManager.svelte';
+  import StatsDashboard from './lib/components/StatsDashboard.svelte';
+  import ToastContainer from './lib/components/ToastContainer.svelte';
+  import ShortcutsHelp from './lib/components/ShortcutsHelp.svelte';
   import { scanText, highlightMatches } from './lib/privacy_scanner';
+  import { shortcuts, matchesShortcut } from './lib/utils/shortcuts.js';
+  import { setupI18n } from './lib/i18n/index.js';
+  import { isLoading } from 'svelte-i18n';
 
   let isRecording = $state(false);
   let status = $state('Ready');
@@ -28,19 +37,90 @@
 
   // Privacy scanning state
   let privacyPanelVisible = $state(false);
-  let privacyMatches = $state([]);
 
   // Template selector state
   let selectedTemplate = $state(null);
 
   // Settings panel state
   let isSettingsOpen = $state(false);
+  let needsApiKeySetup = $state(true); // Track if API keys are configured
 
-  $: privacyMatches = scanText(currentTranscript);
-  $: dangerCount = privacyMatches.filter(m => m.severity === 'danger').length;
-  $: cautionCount = privacyMatches.filter(m => m.severity === 'caution').length;
-  $: totalMatches = privacyMatches.length;
-  $: highlightedTranscript = highlightMatches(currentTranscript, privacyMatches);
+  // Claude integration state
+  let isSendingToClaude = $state(false);
+  let claudeError = $state('');
+  let currentView = $state('chat'); // 'chat', 'transcript', 'prompts', or 'stats'
+
+  // Keyboard shortcuts state
+  let showShortcutsHelp = $state(false);
+  let searchInputRef = $state(null);
+
+  // Global error handling
+  let globalError = $state(null);
+  let globalErrorTimeout = $state(null);
+
+  // Listen for custom events from ErrorBoundary
+  $effect(() => {
+    const handleOpenSettings = () => {
+      isSettingsOpen = true;
+    };
+
+    const handleCreateNewSession = () => {
+      createNewSession();
+    };
+
+    window.addEventListener('open-settings', handleOpenSettings);
+    window.addEventListener('create-new-session', handleCreateNewSession);
+
+    return () => {
+      window.removeEventListener('open-settings', handleOpenSettings);
+      window.removeEventListener('create-new-session', handleCreateNewSession);
+    };
+  });
+
+  // Global uncaught error handler
+  function handleGlobalError(event) {
+    console.error('Global error:', event);
+    const errorMessage = event.error?.message || event.message || 'An unexpected error occurred';
+    showGlobalError(errorMessage);
+    // Prevent default browser error handling
+    event.preventDefault();
+  }
+
+  // Global unhandled promise rejection handler
+  function handleUnhandledRejection(event) {
+    console.error('Unhandled promise rejection:', event);
+    const errorMessage = event.reason?.message || event.reason || 'An unexpected error occurred';
+    showGlobalError(errorMessage);
+    // Prevent default browser error handling
+    event.preventDefault();
+  }
+
+  function showGlobalError(message) {
+    globalError = message;
+
+    // Clear existing timeout
+    if (globalErrorTimeout) {
+      clearTimeout(globalErrorTimeout);
+    }
+
+    // Auto-dismiss after 10 seconds
+    globalErrorTimeout = setTimeout(() => {
+      globalError = null;
+    }, 10000);
+  }
+
+  function dismissGlobalError() {
+    if (globalErrorTimeout) {
+      clearTimeout(globalErrorTimeout);
+    }
+    globalError = null;
+  }
+
+  let privacyMatches = $derived(scanText(currentTranscript));
+  let dangerCount = $derived(privacyMatches.filter(m => m.severity === 'danger').length);
+  let cautionCount = $derived(privacyMatches.filter(m => m.severity === 'caution').length);
+  let totalMatches = $derived(privacyMatches.length);
+  let highlightedTranscript = $derived(highlightMatches(currentTranscript, privacyMatches));
 
   // Error handling utilities
   function handleError(error) {
@@ -142,31 +222,51 @@
         stopRecordingTimer();
         console.log('📤 Calling stop_recording command...');
         console.log('Timestamp:', new Date().toISOString());
-        const text = await invoke('stop_recording');
+        const result = await invoke('stop_recording');
         console.log('✅ RESPONSE RECEIVED from stop_recording command');
+        console.log('Result:', result);
+
+        // Extract data from new response format
+        const text = result.transcript;
+        const sessionId = result.session_id;
+        const recordingId = result.recording_id;
+
         console.log('Transcript length:', text?.length || 0, 'characters');
-        console.log('Transcript preview:', text?.substring(0, 100) || 'NO TEXT');
-        console.log('Full transcript:', text);
+        console.log('Session ID:', sessionId);
+        console.log('Recording ID:', recordingId);
+
         isRecording = false;
         status = 'Ready';
         currentTranscript = text;
 
-        // C2 Integration: Save transcript as message
-        if (currentSession && text && text.trim().length > 0) {
+        // Auto-session creation: Load the newly created session
+        if (sessionId) {
           try {
-            console.log('💾 Saving message to session:', currentSession.id);
-            const message = await invoke('save_message', {
-              sessionId: currentSession.id,
-              role: 'user',
-              content: text,
-              recordingId: null // We'll link this later when we have recording IDs
-            });
-            console.log('✅ Message saved:', message);
-            messages = [...messages, message];
+            console.log('🔄 Loading newly created session:', sessionId);
+
+            // Reload sessions list to include the new session
+            const loadedSessions = await loadSessions();
+
+            // Find the newly created session in the list
+            const newSession = loadedSessions.find(s => s.id === sessionId);
+            if (newSession) {
+              currentSession = newSession;
+
+              // Load messages for this session
+              await loadSessionMessages(sessionId);
+
+              // Switch to chat view to show the new session
+              currentView = 'chat';
+
+              console.log('✅ Auto-switched to new chat session:', newSession);
+              status = 'Session created! Ready for chat.';
+            } else {
+              console.warn('⚠️ New session not found in sessions list');
+            }
           } catch (error) {
-            console.error('❌ Failed to save message:', error);
+            console.error('❌ Failed to load new session:', error);
             const errorMessage = handleError(error);
-            console.error('Message save error:', errorMessage);
+            console.error('Session load error:', errorMessage);
             // Don't block the UI - transcript is still shown
           }
         }
@@ -281,7 +381,72 @@
     }
   }
 
+  async function sendTranscriptToClaude() {
+    if (!currentTranscript || !currentSession || isSendingToClaude) return;
+
+    isSendingToClaude = true;
+    claudeError = '';
+
+    try {
+      // Current transcript is already saved as user message in handleRecord
+      // Now send to Claude
+      const response = await invoke('send_message_to_claude', {
+        message: currentTranscript
+      });
+
+      // Save Claude's response as assistant message
+      const assistantMsg = await invoke('save_message', {
+        sessionId: currentSession.id,
+        role: 'assistant',
+        content: response,
+        recordingId: null
+      });
+
+      messages = [...messages, assistantMsg];
+      console.log('✅ Claude response saved:', assistantMsg);
+
+      // Switch to chat view to show the response
+      currentView = 'chat';
+    } catch (error) {
+      const errorMessage = handleError(error);
+      claudeError = errorMessage;
+      console.error('❌ Failed to send to Claude:', errorMessage);
+    } finally {
+      isSendingToClaude = false;
+    }
+  }
+
+  async function exportCurrentSession() {
+    if (!currentSession || messages.length === 0) return;
+
+    try {
+      const filePath = await invoke('export_session', {
+        sessionId: currentSession.id
+      });
+      status = `Exported to: ${filePath}`;
+      setTimeout(() => {
+        if (status.startsWith('Exported')) status = 'Ready';
+      }, 3000);
+    } catch (error) {
+      const errorMessage = handleError(error);
+      console.error('Export failed:', errorMessage);
+      status = `Export failed: ${errorMessage}`;
+      setTimeout(() => {
+        if (status.startsWith('Export failed')) status = 'Ready';
+      }, 3000);
+    }
+  }
+
   onMount(async () => {
+    // Initialize i18n with user's language preference
+    try {
+      const userLang = await invoke('get_language_preference');
+      setupI18n(userLang);
+    } catch (error) {
+      console.error('Failed to load language preference:', error);
+      setupI18n('en'); // Fallback to English
+    }
+
     // Set up listener for model-loading events
     unlisten = await listen('model-loading', (event) => {
       const payload = event.payload;
@@ -323,6 +488,109 @@
     }
 
     loadHistory();
+
+    // Check if API keys are configured
+    checkApiKeyStatus();
+  });
+
+  async function checkApiKeyStatus() {
+    try {
+      const hasOpenai = await invoke('has_openai_key');
+      const hasClaude = await invoke('has_api_key');
+      needsApiKeySetup = !hasOpenai && !hasClaude;
+    } catch (error) {
+      console.error('Failed to check API key status:', error);
+      needsApiKeySetup = true;
+    }
+  }
+
+  // Keyboard shortcuts handler (merged with global shortcuts)
+  function handleKeydown(e) {
+    // Handle Escape key for closing modals/panels first
+    if (e.key === 'Escape') {
+      if (showShortcutsHelp) {
+        e.preventDefault();
+        showShortcutsHelp = false;
+        return;
+      }
+      if (isSettingsOpen) {
+        e.preventDefault();
+        isSettingsOpen = false;
+        checkApiKeyStatus();
+        return;
+      }
+      if (privacyPanelVisible) {
+        e.preventDefault();
+        privacyPanelVisible = false;
+        return;
+      }
+    }
+
+    // Don't trigger shortcuts when typing in input fields (except help)
+    const target = e.target;
+    const isInputField = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA';
+
+    // Allow Cmd/Ctrl+? even in input fields for help
+    if (matchesShortcut(e, shortcuts.help)) {
+      e.preventDefault();
+      showShortcutsHelp = !showShortcutsHelp;
+      return;
+    }
+
+    // Skip other shortcuts if typing in an input field
+    if (isInputField) return;
+
+    // Global shortcuts
+    if (matchesShortcut(e, shortcuts.record)) {
+      e.preventDefault();
+      if (modelStatus === 'ready') {
+        handleRecord();
+      }
+    }
+    else if (matchesShortcut(e, shortcuts.settings)) {
+      e.preventDefault();
+      isSettingsOpen = true;
+    }
+    else if (matchesShortcut(e, shortcuts.search)) {
+      e.preventDefault();
+      if (searchInputRef) {
+        searchInputRef.focus();
+      }
+    }
+    else if (matchesShortcut(e, shortcuts.export)) {
+      e.preventDefault();
+      if (currentSession && messages.length > 0) {
+        exportCurrentSession();
+      }
+    }
+    else if (matchesShortcut(e, shortcuts.newSession)) {
+      e.preventDefault();
+      createNewSession();
+    }
+    else if (matchesShortcut(e, shortcuts.chatView)) {
+      e.preventDefault();
+      currentView = 'chat';
+    }
+    else if (matchesShortcut(e, shortcuts.transcriptView)) {
+      e.preventDefault();
+      currentView = 'transcript';
+    }
+    else if (matchesShortcut(e, shortcuts.promptsView)) {
+      e.preventDefault();
+      currentView = 'prompts';
+    }
+    else if (matchesShortcut(e, shortcuts.privacyView)) {
+      e.preventDefault();
+      privacyPanelVisible = !privacyPanelVisible;
+    }
+  }
+
+  // Watch for settings panel closing to refresh API key status
+  $effect(() => {
+    if (!isSettingsOpen) {
+      // Delay slightly to ensure settings have been saved
+      setTimeout(checkApiKeyStatus, 100);
+    }
   });
 
   onDestroy(() => {
@@ -336,7 +604,27 @@
   });
 </script>
 
+<!-- Global keyboard shortcuts and error handlers -->
+<svelte:window
+  onkeydown={handleKeydown}
+  onerror={handleGlobalError}
+  onunhandledrejection={handleUnhandledRejection}
+/>
+
 <div class="app-container">
+  <!-- Global Error Toast -->
+  {#if globalError}
+    <div class="global-error-toast" role="alert">
+      <div class="toast-content">
+        <div class="toast-icon">⚠️</div>
+        <div class="toast-message">{globalError}</div>
+      </div>
+      <button class="toast-close" onclick={dismissGlobalError} aria-label="Dismiss error">
+        ✕
+      </button>
+    </div>
+  {/if}
+
   <!-- Loading Overlay -->
   {#if modelStatus === 'loading'}
     <div class="loading-overlay">
@@ -366,13 +654,16 @@
     <aside class="sidebar">
       <div class="sidebar-header">
         <h1 class="app-title">BrainDump</h1>
-        <button class="settings-btn" onclick={() => isSettingsOpen = true} aria-label="Open settings">
+        <button class="settings-btn" onclick={() => isSettingsOpen = true} aria-label="Open settings" title="Settings (⌘,)">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"></circle>
             <path d="M12 1v6m0 6v6m0-12l-5.2 3m10.4 0L12 7m0 10l-5.2-3m10.4 0L12 17"></path>
             <path d="M19.071 4.929A10 10 0 1 1 4.929 19.07 10 10 0 0 1 19.071 4.93z" opacity="0.4"></path>
             <path d="M12 1v6M12 13v6M6.8 7L12 10M17.2 7L12 10M6.8 17L12 14M17.2 17L12 14"></path>
           </svg>
+          {#if needsApiKeySetup}
+            <span class="settings-badge">!</span>
+          {/if}
         </button>
       </div>
 
@@ -395,7 +686,7 @@
       </div>
 
       <div class="search-container">
-        <input type="text" placeholder="Search transcripts..." class="search-input" />
+        <input type="text" placeholder="Search transcripts..." class="search-input" bind:this={searchInputRef} />
       </div>
 
       <div class="transcript-list">
@@ -467,41 +758,113 @@
       <!-- Template Selector -->
       <TemplateSelector bind:selectedTemplate={selectedTemplate} />
 
-      <!-- Current Transcript Display -->
-      <div class="transcript-display">
-        {#if currentTranscript}
-          <div class="transcript-header">
-            <h2>Current Transcript</h2>
-            <div class="header-actions">
-              <button
-                class="privacy-btn"
-                class:has-issues={totalMatches > 0}
-                onclick={() => privacyPanelVisible = !privacyPanelVisible}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
-                </svg>
-                Privacy
-                {#if totalMatches > 0}
-                  <span class="badge" class:danger={dangerCount > 0}>{totalMatches}</span>
-                {/if}
-              </button>
-              <button class="copy-btn" onclick={() => navigator.clipboard.writeText(currentTranscript)}>
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M5.5 4.5h-2a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2m-5-6h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                </svg>
-                Copy
-              </button>
-            </div>
-          </div>
-          <div class="transcript-content">{@html highlightedTranscript}</div>
-        {:else}
-          <div class="empty-transcript">
-            <p>Press the record button to start capturing audio</p>
-            <p class="hint">Your transcription will appear here</p>
-          </div>
-        {/if}
+      <!-- View Tabs -->
+      <div class="view-tabs">
+        <button
+          class="tab-btn"
+          class:active={currentView === 'chat'}
+          onclick={() => currentView = 'chat'}
+        >
+          💬 Chat ({messages.length})
+        </button>
+        <button
+          class="tab-btn"
+          class:active={currentView === 'transcript'}
+          onclick={() => currentView = 'transcript'}
+        >
+          📝 Transcript
+        </button>
+        <button
+          class="tab-btn"
+          class:active={currentView === 'prompts'}
+          onclick={() => currentView = 'prompts'}
+        >
+          🤖 Prompts
+        </button>
+        <button
+          class="tab-btn"
+          class:active={currentView === 'stats'}
+          onclick={() => currentView = 'stats'}
+        >
+          📊 Statistics
+        </button>
+        <button
+          class="tab-btn settings-tab"
+          class:active={isSettingsOpen}
+          onclick={() => isSettingsOpen = true}
+          title="Settings (⌘,)"
+        >
+          ⚙️ Settings
+          {#if needsApiKeySetup}
+            <span class="settings-badge-inline">!</span>
+          {/if}
+        </button>
       </div>
+
+      <!-- Chat View -->
+      {#if currentView === 'chat'}
+        <ChatPanel bind:messages={messages} bind:currentSession={currentSession} />
+      {:else if currentView === 'prompts'}
+        <PromptManager />
+      {:else if currentView === 'stats'}
+        <StatsDashboard />
+      {:else}
+        <!-- Current Transcript Display -->
+        <div class="transcript-display">
+          {#if currentTranscript}
+            <div class="transcript-header">
+              <h2>Current Transcript</h2>
+              <div class="header-actions">
+                <button
+                  class="claude-btn"
+                  onclick={sendTranscriptToClaude}
+                  disabled={isSendingToClaude || !currentSession}
+                >
+                  {#if isSendingToClaude}
+                    <div class="spinner-small"></div>
+                    Sending...
+                  {:else}
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    Send to Claude
+                  {/if}
+                </button>
+                <button
+                  class="privacy-btn"
+                  class:has-issues={totalMatches > 0}
+                  onclick={() => privacyPanelVisible = !privacyPanelVisible}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                  </svg>
+                  Privacy
+                  {#if totalMatches > 0}
+                    <span class="badge" class:danger={dangerCount > 0}>{totalMatches}</span>
+                  {/if}
+                </button>
+                <button class="copy-btn" onclick={() => navigator.clipboard.writeText(currentTranscript)}>
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M5.5 4.5h-2a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2m-5-6h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                  </svg>
+                  Copy
+                </button>
+              </div>
+            </div>
+            {#if claudeError}
+              <div class="error-message">
+                ⚠️ {claudeError}
+              </div>
+            {/if}
+            <div class="transcript-content">{@html highlightedTranscript}</div>
+          {:else}
+            <div class="empty-transcript">
+              <p>Press the record button to start capturing audio</p>
+              <p class="hint">Your transcription will appear here</p>
+            </div>
+          {/if}
+        </div>
+      {/if}
     </main>
   </div>
 
@@ -510,7 +873,25 @@
 
   <!-- Settings Panel Component -->
   <SettingsPanel bind:isOpen={isSettingsOpen} />
+
+  <!-- Toast Notifications -->
+  <ToastContainer />
+
+  <!-- Keyboard Shortcuts Help Modal -->
+  <ShortcutsHelp bind:visible={showShortcutsHelp} />
 </div>
+
+<!--
+  Alternative Chat UI Integration:
+  To use the new ChatView component instead of ChatPanel, replace the ChatPanel usage with:
+  <ChatView />
+
+  This provides a complete chat interface with:
+  - Sessions list sidebar
+  - Message thread display
+  - Input controls with prompt selection
+  - Toast notifications for errors
+-->
 
 <style>
   /* ==================== Global Layout ==================== */
@@ -565,6 +946,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    position: relative;
   }
 
   .settings-btn:hover {
@@ -574,6 +956,50 @@
 
   .settings-btn:active {
     transform: scale(0.95);
+  }
+
+  .settings-badge {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: #ff3b30;
+    color: white;
+    border-radius: 50%;
+    width: 14px;
+    height: 14px;
+    font-size: 10px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid #ffffff;
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.8;
+      transform: scale(1.1);
+    }
+  }
+
+  .settings-badge-inline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    margin-left: 6px;
+    background: #ff3b30;
+    color: white;
+    border-radius: 50%;
+    font-size: 11px;
+    font-weight: 700;
+    animation: pulse 2s ease-in-out infinite;
   }
 
   .search-container {
@@ -616,10 +1042,6 @@
 
   .transcript-item:hover {
     background: #ebebeb;
-  }
-
-  .transcript-item.selected {
-    background: #e0e0e0;
   }
 
   .item-timestamp {
@@ -748,30 +1170,6 @@
     transform: scale(1.1);
   }
 
-  /* Pulse Ring Animation */
-  .pulse-ring {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 100%;
-    height: 100%;
-    border-radius: 50%;
-    border: 2px solid #5CBDB9;
-    animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  }
-
-  @keyframes pulse-ring {
-    0% {
-      opacity: 1;
-      transform: translate(-50%, -50%) scale(1);
-    }
-    100% {
-      opacity: 0;
-      transform: translate(-50%, -50%) scale(1.4);
-    }
-  }
-
   /* ==================== Status Display ==================== */
   .status-section {
     text-align: center;
@@ -867,25 +1265,6 @@
     color: #bbbbbb;
   }
 
-  /* ==================== Transcript Container ==================== */
-  .transcript-container {
-    background: #f9f9f9;
-    border: 1px solid #e0e0e0;
-    border-radius: 12px;
-    padding: 2rem;
-    animation: slideUp 0.3s ease-out;
-  }
-
-  @keyframes slideUp {
-    from {
-      opacity: 0;
-      transform: translateY(20px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
 
   .transcript-header {
     display: flex;
@@ -1212,5 +1591,163 @@
 
   .assistant-message:hover {
     background: #e6f3ff;
+  }
+
+  /* ==================== View Tabs ==================== */
+  .view-tabs {
+    display: flex;
+    gap: 8px;
+    padding: 16px 30px 0;
+    border-bottom: 1px solid #e0e0e0;
+    background: #ffffff;
+  }
+
+  .tab-btn {
+    padding: 10px 20px;
+    border: none;
+    border-bottom: 3px solid transparent;
+    background: none;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: #666666;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .tab-btn:hover {
+    color: #007aff;
+  }
+
+  .tab-btn.active {
+    color: #007aff;
+    border-bottom-color: #007aff;
+  }
+
+  /* ==================== Claude Button ==================== */
+  .claude-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #007aff;
+    color: #ffffff;
+    border: none;
+    padding: 0.625rem 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+  }
+
+  .claude-btn:hover:not(:disabled) {
+    background: #0056b3;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
+  }
+
+  .claude-btn:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  .claude-btn:disabled {
+    background: #cccccc;
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  .spinner-small {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: #ffffff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ==================== Error Message ==================== */
+  .error-message {
+    margin: 16px 0;
+    padding: 12px 16px;
+    background: #fff0f0;
+    border: 1px solid #ff3b30;
+    border-radius: 8px;
+    color: #c41e3a;
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  /* ==================== Global Error Toast ==================== */
+  .global-error-toast {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    max-width: 500px;
+    background: #fff5f5;
+    border: 1px solid #feb2b2;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(255, 59, 48, 0.2);
+    z-index: 10000;
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    animation: slideInRight 0.3s ease-out;
+  }
+
+  @keyframes slideInRight {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  .global-error-toast .toast-content {
+    flex: 1;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .global-error-toast .toast-icon {
+    font-size: 1.25rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  .global-error-toast .toast-message {
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: #742a2a;
+    word-wrap: break-word;
+  }
+
+  .global-error-toast .toast-close {
+    background: none;
+    border: none;
+    color: #742a2a;
+    font-size: 1.25rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+  }
+
+  .global-error-toast .toast-close:hover {
+    background: rgba(116, 42, 42, 0.1);
+  }
+
+  .global-error-toast .toast-close:active {
+    transform: scale(0.9);
   }
 </style>

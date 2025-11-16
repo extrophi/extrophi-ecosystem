@@ -3,10 +3,9 @@
   import { onMount } from 'svelte';
 
   let templates = $state([]);
-  let selectedTemplate = $state(null);
 
-  // Export selectedTemplate so parent can access it
-  export { selectedTemplate };
+  // Make selectedTemplate bindable from parent
+  let { selectedTemplate = $bindable(null) } = $props();
 
   onMount(async () => {
     try {
@@ -28,8 +27,8 @@
 </script>
 
 <div class="template-selector">
-  <label>AI Template:</label>
-  <select bind:value={selectedTemplate}>
+  <label for="template-select">AI Template:</label>
+  <select id="template-select" bind:value={selectedTemplate}>
     {#each templates as template}
       <option value={template}>
         {formatTemplateName(template.name)}

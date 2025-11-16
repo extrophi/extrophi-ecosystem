@@ -34,8 +34,8 @@ impl WavWriter {
             let fract = src_index - index_floor as f64;
 
             // Linear interpolation between adjacent samples
-            let sample = samples[index_floor] * (1.0 - fract) as f32
-                       + samples[index_ceil] * fract as f32;
+            let sample =
+                samples[index_floor] * (1.0 - fract) as f32 + samples[index_ceil] * fract as f32;
             resampled.push(sample);
         }
 
@@ -43,33 +43,43 @@ impl WavWriter {
     }
 
     /// Write samples to WAV file, resampling from input_rate to 16kHz (16-bit PCM, mono)
-    pub fn write_resampled<P: AsRef<Path>>(path: P, samples: &[f32], input_rate: u32) -> Result<(), RecorderError> {
+    pub fn write_resampled<P: AsRef<Path>>(
+        path: P,
+        samples: &[f32],
+        input_rate: u32,
+    ) -> Result<(), RecorderError> {
         let resampled = Self::resample(samples, input_rate, 16000);
         Self::write_with_rate(path, &resampled, 16000)
     }
 
     /// Write samples to WAV file with custom sample rate (16-bit PCM, mono)
-    pub fn write_with_rate<P: AsRef<Path>>(path: P, samples: &[f32], sample_rate: u32) -> Result<(), RecorderError> {
+    pub fn write_with_rate<P: AsRef<Path>>(
+        path: P,
+        samples: &[f32],
+        sample_rate: u32,
+    ) -> Result<(), RecorderError> {
         let spec = WavSpec {
             channels: 1,
             sample_rate,
             bits_per_sample: 16,
             sample_format: hound::SampleFormat::Int,
         };
-        
+
         let mut writer = HoundWriter::create(path, spec)
             .map_err(|e| RecorderError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
-        
+
         for sample in samples {
             // Convert f32 [-1.0, 1.0] to i16 [-32768, 32767]
             let sample_i16 = (*sample * i16::MAX as f32) as i16;
-            writer.write_sample(sample_i16)
-                .map_err(|e| RecorderError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+            writer.write_sample(sample_i16).map_err(|e| {
+                RecorderError::Io(std::io::Error::new(std::io::ErrorKind::Other, e))
+            })?;
         }
-        
-        writer.finalize()
+
+        writer
+            .finalize()
             .map_err(|e| RecorderError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
-        
+
         Ok(())
     }
 }
@@ -78,21 +88,21 @@ impl WavWriter {
 mod tests {
     use super::*;
     use std::fs;
-    
+
     #[test]
     fn test_wav_write() {
         let samples = vec![0.0; 16000]; // 1 second of silence
         let path = "/tmp/test_recorder.wav";
-        
+
         WavWriter::write(path, &samples).unwrap();
-        
+
         // Verify file exists
         assert!(std::path::Path::new(path).exists());
-        
+
         // Verify file size (~32KB for 1s 16kHz mono 16-bit)
         let metadata = fs::metadata(path).unwrap();
         assert!(metadata.len() > 30000 && metadata.len() < 35000);
-        
+
         // Cleanup
         fs::remove_file(path).unwrap();
     }

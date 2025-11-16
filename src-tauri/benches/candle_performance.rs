@@ -38,7 +38,10 @@ fn benchmark_candle_transcription() {
     match plugin.initialize() {
         Ok(_) => {
             let init_time = start.elapsed();
-            println!("   ✅ Initialized in {:.2}ms", init_time.as_secs_f64() * 1000.0);
+            println!(
+                "   ✅ Initialized in {:.2}ms",
+                init_time.as_secs_f64() * 1000.0
+            );
         }
         Err(e) => {
             eprintln!("   ❌ Initialization failed: {}", e);
@@ -54,7 +57,10 @@ fn benchmark_candle_transcription() {
         let audio = generate_test_audio(duration);
         let audio_size_mb = (audio.samples.len() * 4) as f64 / (1024.0 * 1024.0);
 
-        print!("   Testing {}s audio ({:.1}MB)... ", duration, audio_size_mb);
+        print!(
+            "   Testing {}s audio ({:.1}MB)... ",
+            duration, audio_size_mb
+        );
 
         let start = Instant::now();
         match plugin.transcribe(&audio) {
@@ -63,14 +69,8 @@ fn benchmark_candle_transcription() {
                 let elapsed_secs = elapsed.as_secs_f64();
                 let realtime_factor = elapsed_secs / duration as f64;
 
-                println!(
-                    "✅ {:.2}s ({:.2}× realtime)",
-                    elapsed_secs, realtime_factor
-                );
-                println!(
-                    "      Transcript length: {} chars",
-                    transcript.text.len()
-                );
+                println!("✅ {:.2}s ({:.2}× realtime)", elapsed_secs, realtime_factor);
+                println!("      Transcript length: {} chars", transcript.text.len());
             }
             Err(e) => {
                 println!("❌ Failed: {}", e);

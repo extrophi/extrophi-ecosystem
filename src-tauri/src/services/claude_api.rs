@@ -3,7 +3,7 @@
 
 use crate::error::{ClaudeApiError, Result};
 use parking_lot::Mutex;
-use reqwest::{Client, header};
+use reqwest::{header, Client};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -121,6 +121,7 @@ impl RateLimiter {
 }
 
 /// Claude API client
+#[derive(Clone)]
 pub struct ClaudeClient {
     client: Client,
     rate_limiter: Arc<Mutex<RateLimiter>>,
@@ -157,12 +158,10 @@ impl ClaudeClient {
         let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USERNAME)
             .map_err(|e| ClaudeApiError::KeyringError(e.to_string()))?;
 
-        entry
-            .get_password()
-            .map_err(|e| match e {
-                keyring::Error::NoEntry => ClaudeApiError::ApiKeyNotFound,
-                _ => ClaudeApiError::KeyringError(e.to_string()),
-            })
+        entry.get_password().map_err(|e| match e {
+            keyring::Error::NoEntry => ClaudeApiError::ApiKeyNotFound.into(),
+            _ => ClaudeApiError::KeyringError(e.to_string()).into(),
+        })
     }
 
     /// Delete API key from system keyring
@@ -171,7 +170,7 @@ impl ClaudeClient {
             .map_err(|e| ClaudeApiError::KeyringError(e.to_string()))?;
 
         entry
-            .delete_credential()
+            .delete_password()
             .map_err(|e| ClaudeApiError::KeyringError(e.to_string()))?;
 
         Ok(())
@@ -189,7 +188,9 @@ impl ClaudeClient {
             Ok(_) => Ok(true),
             Err(e) => match e {
                 crate::error::BrainDumpError::ClaudeApi(ClaudeApiError::InvalidApiKey) => Ok(false),
-                crate::error::BrainDumpError::ClaudeApi(ClaudeApiError::ApiKeyNotFound) => Ok(false),
+                crate::error::BrainDumpError::ClaudeApi(ClaudeApiError::ApiKeyNotFound) => {
+                    Ok(false)
+                }
                 _ => Err(e),
             },
         }
@@ -238,7 +239,10 @@ impl ClaudeClient {
                 401 => ClaudeApiError::InvalidApiKey.into(),
                 429 => ClaudeApiError::RateLimitExceeded.into(),
                 _ => {
-                    let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                    let error_text = response
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Unknown error".to_string());
                     ClaudeApiError::RequestFailed(format!("HTTP {}: {}", status, error_text)).into()
                 }
             });

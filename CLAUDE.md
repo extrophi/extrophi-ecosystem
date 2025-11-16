@@ -2,248 +2,527 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+---
+
 ## Project Overview
 
-**BrainDump V3.0** - Privacy-first voice journaling desktop application
-- **Architecture:** Svelte 5 frontend → Tauri 2.1 IPC → Rust backend → Whisper C++ (FFI) → Metal GPU
-- **Privacy-first:** 100% local processing, no cloud dependencies, no telemetry
-- **Stage B complete:** Recording + transcription working with basic UI
-- **Stage C in progress:** Claude API integration (C2) for AI-assisted journaling
+**BrainDump v3.0** - Privacy-first voice journaling desktop application
+**Stack**: Tauri 2.0 + Svelte 5 + Rust + whisper.cpp FFI
+**Status**: 60% feature-complete, buildable and runnable
+**Current Branch**: `claude/overnight-chat-integration-01Bw9rfUA3zLZKNsfbNZdh54`
+
+---
 
 ## Essential Commands
 
-### Setup
-```bash
-# Prerequisites (macOS Apple Silicon)
-brew install whisper-cpp portaudio
-nvm use 22  # Node.js v22 (DO NOT use Homebrew for Node)
-
-# Install dependencies
-npm install
-cd src-tauri && cargo build && cd ..
-
-# Download Whisper model (required, 141MB base model)
-mkdir -p src-tauri/models
-curl -L -o src-tauri/models/ggml-base.bin \
-  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin
-```
-
 ### Development
 ```bash
-npm run tauri:dev    # Full stack dev mode (Rust backend + Svelte frontend hot reload)
-npm run dev          # Frontend only (Vite dev server on localhost:5173)
-npm run tauri:build  # Production .app bundle for macOS
+# Start full development server (Tauri + Svelte with hot reload)
+npm run tauri:dev
+
+# Frontend only (Svelte dev server)
+npm run dev
+```
+
+### Build
+```bash
+# Build production app (creates .app/.dmg)
+npm run tauri:build
+
+# Build frontend only
+npm run build
 ```
 
 ### Testing
 ```bash
-cd src-tauri
-cargo test                   # All Rust tests
-cargo test -- --nocapture    # With console output
-cargo test test_name         # Single test
+# Run Rust unit tests
+cd src-tauri && cargo test
 
-# Test Whisper.cpp independently
-whisper-cli -m src-tauri/models/ggml-base.bin -f test-recordings/sample.wav -otxt -nt
-
-# Inspect database
-sqlite3 ~/.braindump/data/braindump.db ".schema"
-sqlite3 ~/.braindump/data/braindump.db "SELECT * FROM transcripts ORDER BY created_at DESC LIMIT 5;"
+# Frontend tests (not yet configured)
+npm test
 ```
 
-### Debugging
+### First-Time Setup
 ```bash
-# Logs are written to ~/.braindump/logs/
-tail -f ~/.braindump/logs/braindump_*.log
+# 1. Install whisper.cpp (macOS)
+brew install whisper-cpp
 
-# Check model loading status (takes 30+ seconds on first launch)
-grep "Model" ~/.braindump/logs/braindump_*.log
+# 2. Install dependencies
+npm install
+cd src-tauri && cargo build
+
+# 3. Download Whisper model (141MB)
+mkdir -p models
+curl -L -o models/ggml-base.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin
+
+# 4. Create .env file with API keys
+echo 'OPENAI_API_KEY=sk-...' > .env
+echo 'CLAUDE_API_KEY=sk-ant-...' >> .env
+
+# 5. Run development server
+npm run tauri:dev
 ```
 
-## High-Level Architecture
+---
 
-### System Layers
+## Architecture Overview
+
+### Stack Diagram
 ```
-┌─────────────────────────────────────────────────────────┐
-│  Svelte 5 Frontend (src/)                               │
-│  - App.svelte (main layout, tabs)                       │
-│  - RecordButton, VolumeIndicator, HistoryList           │
-│  - SettingsPanel (API key management)                   │
-│  - PrivacyPanel (C2 chat interface)                     │
-└──────────────────────┬──────────────────────────────────┘
-                       │ Tauri IPC (@tauri-apps/api invoke)
-┌──────────────────────▼──────────────────────────────────┐
-│  Tauri Commands Layer (src-tauri/src/commands.rs)       │
-│  - Audio: start_recording, stop_recording, get_peak     │
-│  - Transcription: get_transcripts, is_model_loaded      │
-│  - C2: create_chat_session, send_message_to_claude      │
-│  - API: store_api_key, has_api_key, test_api_key        │
-└─────────┬──────────────┬────────────────┬───────────────┘
-          │              │                │
-    ┌─────▼─────┐  ┌─────▼─────┐   ┌─────▼──────┐
-    │Audio Thread│ │PluginMgr  │   │ Database   │
-    │ (CPAL)     │ │ (Whisper) │   │ (SQLite)   │
-    └────────────┘  └─────┬─────┘   └────────────┘
-                          │ FFI
-                    ┌─────▼──────────┐
-                    │ libwhisper.dylib│
-                    │ (Homebrew C++)  │
-                    └─────────────────┘
+┌─────────────────────────────────────────────────┐
+│         TAURI 2.0 DESKTOP APPLICATION           │
+├─────────────────────────────────────────────────┤
+│  Frontend: Svelte 5 (Runes API)                │
+│  └─ Components: ChatPanel, SettingsPanel,       │
+│     PrivacyPanel, TemplateSelector              │
+├─────────────────────────────────────────────────┤
+│  Backend: Rust                                  │
+│  ├─ Audio: cpal + hound (recording)             │
+│  ├─ Transcription: whisper.cpp FFI (Metal GPU)  │
+│  ├─ Database: SQLite + Repository pattern       │
+│  ├─ AI APIs: Claude + OpenAI HTTP clients       │
+│  └─ Security: macOS Keychain (API keys)         │
+└─────────────────────────────────────────────────┘
 ```
 
-### Critical Threading Architecture
-CPAL audio streams are `!Send` (cannot cross thread boundaries safely):
-- **Main thread:** Tauri event loop handles IPC commands
-- **Audio thread:** Dedicated thread owns CPAL stream lifecycle
-- **Communication:** `mpsc::channel` with `(AudioCommand, Sender<AudioResponse>)` messages
+### Data Flow: Recording → Transcription → Chat
 
-**DO NOT** attempt to move CPAL streams across threads or store them in `Arc<Mutex<>>`.
+1. **User Records Audio**
+   ```
+   Click Record
+   ├─> Tauri command: start_recording()
+   ├─> Audio thread: cpal captures mic input
+   └─> Real-time peak level visualization
+   ```
 
-### Tauri IPC Commands
+2. **User Stops Recording**
+   ```
+   Click Stop
+   ├─> Tauri command: stop_recording()
+   ├─> Returns: f32 audio samples + sample_rate
+   ├─> Resample to 16kHz (Whisper requirement)
+   ├─> Save WAV to test-recordings/ (dev mode)
+   ├─> Whisper.cpp FFI: transcribe via Metal GPU
+   ├─> Auto-create chat session
+   ├─> Save transcript as first user message
+   └─> Return: transcript + session_id
+   ```
 
-**Audio Recording:**
-```typescript
-await invoke('start_recording')  // → AudioCommand::StartRecording → audio thread
-await invoke('stop_recording')   // → Returns {samples, sample_rate}
-await invoke('get_peak_level')   // → f32 (0.0-1.0 for volume indicator)
-```
+3. **AI Chat Response**
+   ```
+   User sends message
+   ├─> Check provider selection (OpenAI/Claude)
+   ├─> ⚠️ BUG: Always routes to Claude API
+   │   (Should route based on selected provider)
+   ├─> API client sends HTTP request
+   ├─> Save AI response as assistant message
+   └─> Update chat UI
+   ```
 
-**Transcription:**
-```typescript
-await invoke('is_model_loaded')           // → bool (model loads async in background)
-await invoke('get_transcripts', {limit})  // → Transcript[]
-```
+---
 
-**C2 Integration (Claude API):**
-```typescript
-await invoke('create_chat_session', {title})  // → i64 session_id
-await invoke('send_message_to_claude', {sessionId, content, systemPrompt?})
-await invoke('store_api_key', {apiKey})       // → Stores in system keyring
-await invoke('has_api_key')                   // → bool
-await invoke('test_api_key')                  // → {valid: bool, error?: string}
-```
+## Critical Documentation
 
-## Key Implementation Details
+⭐ **READ THESE FIRST** before making changes:
 
-### Plugin System (`src-tauri/src/plugin/`)
-Two transcription backends implementing `TranscriptionPlugin` trait:
-- **WhisperCppPlugin** (default): FFI bindings to Homebrew `libwhisper.dylib`, Metal GPU acceleration
-- **CandlePlugin** (experimental): Pure Rust ML using Hugging Face Candle
+### Project Status & Missing Features
+- **`docs/dev/PROJECT_STATUS_2025-11-16.md`**
+  - Current state: what works vs what's broken
+  - Feature completion matrix (60% complete)
+  - 14 missing features before v1.0
+  - Known bugs and issues
 
-**Plugin initialization is async** and happens in background thread on app startup:
-1. `main.rs` spawns async task in `setup()` hook
-2. Emits `model-loading` events: `{status: "loading"|"ready"|"error"}`
-3. Takes 30+ seconds to load ggml-base.bin model on first run
+### Implementation Guide
+- **`docs/dev/GITHUB_ISSUES_FOR_WEB_TEAM.md`**
+  - 14 detailed GitHub issues with implementation steps
+  - Priority breakdown (P1-P4)
+  - Effort estimates (166 hours total)
+  - Code file references for each issue
 
-### Whisper.cpp FFI Integration
-Direct C FFI bindings in `whisper_cpp.rs`:
+### Development Workflow
+- **`docs/dev/HANDOFF_TO_WEB_TEAM.md`**
+  - Complete development setup
+  - Testing requirements
+  - Code style conventions
+  - Git workflow and PR process
+
+### Agent Work Logs
+- **`docs/agents/`** - 3 agent deliverable reports from overnight sprint
+
+### Planning Archive
+- **`docs/pm/archive/`** - Historical planning documents and proposals
+
+---
+
+## Key Architecture Patterns
+
+### 1. Whisper.cpp FFI Integration
+
+**Pattern**: Direct C FFI to whisper.cpp library (not subprocess).
+
 ```rust
+// src-tauri/src/plugin/whisper_cpp.rs
 extern "C" {
     fn whisper_init_from_file(path: *const c_char) -> *mut WhisperContext;
-    fn whisper_full(ctx: *mut WhisperContext, params: WhisperFullParams,
-                    samples: *const f32, n_samples: i32) -> i32;
-    fn whisper_full_get_segment_text(ctx: *mut WhisperContext, i: i32) -> *const c_char;
+    fn whisper_full(ctx: *mut WhisperContext, ...);
 }
 ```
 
-**Build configuration** in `build.rs`:
-- Links against `/opt/homebrew/Cellar/whisper-cpp/1.8.2/libexec/lib/libwhisper.dylib`
-- Sets rpath for dylib loading: `@executable_path` and `@executable_path/../Frameworks`
+**Build System** (`src-tauri/build.rs`):
+- Uses `pkg-config` to find whisper.cpp installation
+- Portable across systems (no hardcoded paths)
+- Fallback with helpful error messages
+- Feature flag: `[features] whisper = []`
 
-### Database Schema (SQLite)
-Located at `~/.braindump/data/braindump.db`, managed by Repository pattern:
-
-**Stage B (Voice Transcription):**
-- `recordings` - Audio metadata (filepath, duration_ms, sample_rate, channels)
-- `transcripts` - Transcription text linked to recording_id (text, language, confidence, plugin_name)
-- `segments` - Time-aligned segments (start_ms, end_ms, text) for future subtitle support
-
-**Stage C (C2 Integration):**
-- `chat_sessions` - Conversation threads (id, title, created_at, updated_at)
-- `messages` - Chat messages (session_id, recording_id?, role: user|assistant, content, privacy_tags)
-- `prompt_templates` - Reusable system prompts (name, content, category)
-
-### Audio Processing Pipeline
-1. **Capture:** CPAL streams at device native rate (44.1kHz or 48kHz) → 32-bit float samples
-2. **Buffer:** Accumulate in `Vec<f32>` during recording
-3. **Save:** Write 16-bit PCM WAV to `test-recordings/{timestamp}.wav` (using `hound`)
-4. **Resample:** Convert to 16kHz mono using `rubato::SincFixedIn` (Whisper requirement)
-5. **Transcribe:** Pass f32 samples to WhisperCppPlugin via FFI
-6. **Store:** Save to database + markdown file `test-transcripts/{timestamp}.md`
-
-### Error Handling Pattern
-Custom error types in `src-tauri/src/error.rs`:
+**Model Path Logic**:
 ```rust
-#[derive(Debug, thiserror::Error)]
-pub enum BrainDumpError {
-    #[error("Audio error: {0}")]
-    Audio(#[from] AudioError),
-    #[error("Database error: {0}")]
-    Database(#[from] DatabaseError),
-    #[error("Transcription error: {0}")]
-    Transcription(#[from] TranscriptionError),
+// Development: ./models/ggml-base.bin
+// Production: Contents/Resources/models/ggml-base.bin
+```
+
+### 2. .env Auto-Import to Keychain
+
+**Unique Pattern**: On app startup, API keys from `.env` are automatically imported to macOS Keychain.
+
+```rust
+// src-tauri/src/main.rs:12-42
+fn main() {
+    dotenv::dotenv().ok();  // Load .env file
+    import_env_keys_to_keychain();  // Auto-import to keychain
+    // ... rest of initialization
 }
 ```
 
-All errors implement `serde::Serialize` for IPC transport to frontend.
+**Why**: Improves fresh install UX - users don't need to manually enter keys in Settings.
 
-### Claude API Integration (`src-tauri/src/services/claude_api.rs`)
-- **Client:** `ClaudeClient` manages HTTP requests to Anthropic API
-- **Model:** `claude-3-7-sonnet-20250219` (configurable)
-- **API Key Storage:** System keyring via `keyring` crate (service: "braindump", username: "claude_api_key")
-- **Security:** API key never logged, stored securely outside SQLite database
+### 3. Auto-Session Creation
 
-## File Locations
+**Pattern**: Recording completion automatically creates a chat session with transcript as first message.
 
-**Development:**
-- Recordings: `test-recordings/{timestamp}.wav`
-- Transcripts: `test-transcripts/{timestamp}.md`
-- Whisper model: `src-tauri/models/ggml-base.bin` (gitignored, 141MB)
-- Logs: `~/.braindump/logs/braindump_{date}.log`
-- Database: `~/.braindump/data/braindump.db`
-
-**Production (.app bundle):**
-- Model: `BrainDump.app/Contents/Resources/models/ggml-base.bin`
-- Dylib: `BrainDump.app/Contents/Frameworks/libwhisper.dylib`
-
-## Development Patterns
-
-### Adding New Tauri Commands
-1. Define command in `src-tauri/src/commands.rs`
-2. Register in `main.rs` `invoke_handler!` macro
-3. Call from frontend: `import { invoke } from '@tauri-apps/api/core'`
-
-### Modifying Database Schema
-1. Update `src-tauri/src/db/models.rs` (add structs)
-2. Add migration in `src-tauri/src/db/mod.rs` `initialize_db()`
-3. Update `Repository` methods in `src-tauri/src/db/repository.rs`
-4. Database auto-migrates on next app launch
-
-### Testing Transcription Changes
-```bash
-# Record 5-second test audio
-npm run tauri:dev  # Click record, speak, click stop
-
-# Or use pre-recorded sample
-whisper-cli -m src-tauri/models/ggml-base.bin \
-  -f test-recordings/sample.wav -otxt -nt -l en
-
-# Check output
-cat test-transcripts/*.md | tail -1
+```rust
+// src-tauri/src/commands.rs:212-252
+// After transcription completes:
+let session = ChatSession {
+    title: Some(format!("Brain Dump {}", now.format("%Y-%m-%d %H:%M"))),
+    ...
+};
+let session_id = db.create_chat_session(&session)?;
 ```
 
-## Current Known Issues
+### 4. Repository Pattern (Database)
 
-**Production Hardening (from `docs/pm/Stage B: Production Hardening Strategy.md`):**
-- Remove all `.unwrap()` calls (use `?` or `.unwrap_or_else()`)
-- Add timeout protection for transcription (currently blocks indefinitely)
-- Implement proper microphone permission checking (macOS Privacy & Security)
-- Frontend error handling shows generic "Error" instead of detailed messages
+**Pattern**: All database operations go through `Repository` struct.
 
-**UI/UX:**
-- Record button color hardcoded (needs theme consistency)
-- No loading state indicator during 30s model initialization
-- Volume indicator doesn't show when not recording (should show ambient level)
+```rust
+// src-tauri/src/db/repository.rs
+pub struct Repository {
+    conn: Arc<Mutex<Connection>>,
+}
 
-**Performance:**
-- First transcription takes 30+ seconds (model loading)
-- Large audio files (>5min) may cause UI freeze during resampling
+impl Repository {
+    pub fn create_chat_session(&self, session: &ChatSession) -> Result<i64>
+    pub fn get_messages(&self, session_id: i64) -> Result<Vec<Message>>
+    // ... all CRUD operations
+}
+```
+
+**Schema Location**: `src-tauri/src/db/schema.sql` (V2 migration applied)
+
+### 5. Privacy Scanner (Client-Side)
+
+**Pattern**: Regex-based PII detection before sending to AI.
+
+```javascript
+// src/lib/privacy_scanner.js
+const PATTERNS = [
+    { regex: /\b\d{3}-\d{2}-\d{4}\b/g, type: 'ssn', severity: 'danger' },
+    { regex: /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, type: 'email' },
+    // ... more patterns
+];
+
+export function scanText(text) {
+    // Returns: [{ type, value, severity }]
+}
+```
+
+**Non-Blocking**: User can proceed even with detected PII.
+
+---
+
+## Critical Gotchas
+
+### 1. Svelte 5 Runes (Breaking Change)
+
+**MUST USE** new Svelte 5 syntax:
+
+```javascript
+// ❌ OLD (Svelte 4) - DO NOT USE
+export let myProp;
+$: derivedValue = myProp * 2;
+
+// ✅ NEW (Svelte 5) - REQUIRED
+let { myProp = $bindable() } = $props();
+let derivedValue = $derived(myProp * 2);
+```
+
+**Files Using Runes**:
+- `src/App.svelte` - Main state management
+- `src/components/ChatPanel.svelte` - Two-way binding with `$bindable()`
+- `src/components/SettingsPanel.svelte` - Provider selection state
+- `src/components/PrivacyPanel.svelte` - Reactive PII scanning
+
+### 2. Provider Selection Bug (P1 Critical)
+
+**Bug**: User can select OpenAI or Claude in Settings, but chat **always uses Claude**.
+
+**Location**: `src/components/ChatPanel.svelte:38`
+
+```javascript
+// ❌ BUG: Hardcoded to Claude
+const response = await invoke('send_message_to_claude', { message: userMessage });
+
+// ✅ FIX: Route based on provider
+const command = selectedProvider === 'openai'
+    ? 'send_openai_message'
+    : 'send_message_to_claude';
+const response = await invoke(command, { message: userMessage });
+```
+
+**Also Missing**: Provider selection is NOT persisted to database (resets on app restart).
+
+### 3. Database Location Issue
+
+**Current**: `~/.braindump/data/braindump.db`
+**Should Be**: `~/Library/Application Support/com.braindump.app/braindump.db` (macOS standard)
+
+### 4. Documentation is NOT in Git
+
+**Critical**: `docs/` directory is in `.gitignore` - documentation won't be committed!
+
+This is intentional (IP protection), but means:
+- Documentation only exists locally
+- Future contributors won't see it in GitHub
+- Keep local copies safe
+
+### 5. Test Data Accumulation
+
+**Directories** (both in `.gitignore`):
+- `test-recordings/` - WAV files from manual testing
+- `test-transcripts/` - Markdown transcripts
+
+**Privacy**: These contain user voice recordings - must NOT be committed to git.
+
+---
+
+## Database Schema (V2)
+
+```sql
+-- Core Tables
+recordings          -- Audio file metadata (path, duration, sample_rate)
+├─> transcripts     -- Whisper output (text, language, confidence)
+    └─> segments    -- Future: Timestamp-aligned segments
+
+chat_sessions       -- Conversation threads
+├─> messages        -- User + AI messages
+    └─> recording_id (nullable FK)
+
+-- Configuration
+prompt_templates    -- RAG prompts (brain_dump, end_of_day, crisis_support)
+metadata            -- Schema version, app settings
+```
+
+**Migration**: V1 → V2 adds `chat_sessions` and `messages` tables.
+
+---
+
+## Common Development Tasks
+
+### Adding a New Tauri Command
+
+1. **Define command in `src-tauri/src/commands.rs`**:
+```rust
+#[tauri::command]
+pub async fn my_new_command(
+    param: String,
+    state: tauri::State<'_, AppState>
+) -> Result<String, String> {
+    // Implementation
+    Ok("result".to_string())
+}
+```
+
+2. **Register in `src-tauri/src/main.rs`**:
+```rust
+.invoke_handler(tauri::generate_handler![
+    // ... existing commands
+    commands::my_new_command,
+])
+```
+
+3. **Call from frontend**:
+```javascript
+import { invoke } from '@tauri-apps/api/core';
+
+const result = await invoke('my_new_command', { param: 'value' });
+```
+
+### Adding a Database Table
+
+1. **Update schema**: `src-tauri/src/db/schema.sql`
+2. **Create Rust model**: `src-tauri/src/db/models.rs`
+3. **Add Repository methods**: `src-tauri/src/db/repository.rs`
+4. **Increment schema version** in metadata table
+5. **Test migration** from previous version
+
+### Creating a New Svelte Component
+
+1. **Create file**: `src/components/MyComponent.svelte`
+2. **Use Svelte 5 runes**:
+```svelte
+<script>
+    let { propName = $bindable('default') } = $props();
+    let computed = $derived(propName.toUpperCase());
+</script>
+
+<div>{computed}</div>
+```
+
+3. **Import in parent**:
+```svelte
+<script>
+    import MyComponent from './components/MyComponent.svelte';
+</script>
+
+<MyComponent bind:propName={myState} />
+```
+
+---
+
+## Known Issues (See docs/ for Full List)
+
+### P1 Critical (Blocks v1.0)
+1. **Provider selection NOT persisted** - Resets to "openai" on app restart
+2. **Provider selection NOT connected to backend** - Always uses Claude API
+3. **Prompt management UI missing** - Can SELECT but not CREATE/EDIT/DELETE
+4. **Session management incomplete** - Can't delete or rename sessions
+
+### P2 High
+5. **No Whisper model selection** - Stuck with base model
+6. **Search box non-functional** - UI exists but does nothing
+7. **No audio playback** - Can't replay original recordings
+
+**See**: `docs/dev/GITHUB_ISSUES_FOR_WEB_TEAM.md` for all 14 issues with implementation details.
+
+---
+
+## File Reference Map
+
+### When Adding Features
+
+**Audio Recording**:
+- Commands: `src-tauri/src/commands.rs:14-82`
+- Audio Module: `src-tauri/src/audio/mod.rs`
+- UI: `src/App.svelte` (record button)
+
+**Transcription**:
+- Whisper FFI: `src-tauri/src/plugin/whisper_cpp.rs`
+- Command: `src-tauri/src/commands.rs:168-252`
+
+**Chat/AI**:
+- Claude Client: `src-tauri/src/services/claude_api.rs`
+- OpenAI Client: `src-tauri/src/services/openai_api.rs`
+- UI: `src/components/ChatPanel.svelte`
+- Commands: `src-tauri/src/commands.rs:254-406`
+
+**Database**:
+- Schema: `src-tauri/src/db/schema.sql`
+- Models: `src-tauri/src/db/models.rs`
+- Repository: `src-tauri/src/db/repository.rs`
+
+**Settings**:
+- UI: `src/components/SettingsPanel.svelte`
+- Keychain: Uses `keyring` crate
+- Commands: `src-tauri/src/commands.rs:408-526`
+
+---
+
+## Testing Strategy (Not Yet Implemented)
+
+### Recommended Structure
+```
+src-tauri/tests/
+├── integration/
+│   ├── audio_recording_test.rs
+│   ├── transcription_test.rs
+│   └── chat_session_test.rs
+└── unit/
+    ├── db_repository_test.rs
+    └── api_client_test.rs
+
+src/tests/
+├── privacy_scanner.test.js
+└── components/
+    ├── ChatPanel.test.js
+    └── SettingsPanel.test.js
+```
+
+**Current Coverage**: ~5% (only basic unit tests in some modules)
+
+**Goal**: 60%+ coverage before v1.0 release
+
+---
+
+## Debugging Tips
+
+### Rust Backend Logs
+```bash
+# Logs go to stdout during development
+npm run tauri:dev
+
+# Or check system logs
+tail -f ~/Library/Logs/braindump/app.log
+```
+
+### Frontend Console
+- Open Developer Tools in running app: `Cmd+Option+I`
+- Console shows: Tauri command errors, Svelte warnings, API responses
+
+### Common Errors
+
+**"library 'whisper' not found"**:
+```bash
+# Solution: Install whisper.cpp
+brew install whisper-cpp
+```
+
+**"Cannot use `export let` in runes mode"**:
+```bash
+# Solution: Migrate to Svelte 5 runes syntax
+# Change: export let prop
+# To: let { prop } = $props()
+```
+
+**"API key not found"**:
+```bash
+# Solution: Create .env file or add via Settings panel
+echo 'OPENAI_API_KEY=sk-...' > .env
+npm run tauri:dev  # Auto-imports to keychain
+```
+
+---
+
+## Quick Links
+
+- **Project Status**: `docs/dev/PROJECT_STATUS_2025-11-16.md`
+- **Missing Features**: `docs/dev/GITHUB_ISSUES_FOR_WEB_TEAM.md`
+- **Development Guide**: `docs/dev/HANDOFF_TO_WEB_TEAM.md`
+- **GitHub Repo**: https://github.com/Iamcodio/IAC-031-clear-voice-app
+- **Tauri Docs**: https://v2.tauri.app/
+- **Svelte 5 Docs**: https://svelte.dev/docs/svelte/what-are-runes
+
+---
+
+**Last Updated**: 2025-11-16
+**Current Branch**: `claude/overnight-chat-integration-01Bw9rfUA3zLZKNsfbNZdh54`
+**Completion Status**: 60% feature-complete, 14 features missing before v1.0

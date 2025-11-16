@@ -1,7 +1,7 @@
 //! Whisper.cpp Direct FFI Plugin
 //!
 //! Calls whisper.cpp library directly (no Stage A wrapper)
-//! 
+//!
 //! Flow:
 //! 1. Load model: whisper_init_from_file()
 //! 2. Process audio: whisper_full() with f32 samples
@@ -32,10 +32,10 @@ struct WhisperFullParams {
 extern "C" {
     /// Load model from file, returns context or null on failure
     fn whisper_init_from_file(path_model: *const c_char) -> *mut WhisperContext;
-    
+
     /// Get default transcription parameters
     fn whisper_full_default_params(strategy: i32) -> WhisperFullParams;
-    
+
     /// Run full transcription on audio samples
     /// Returns 0 on success, non-zero on error
     fn whisper_full(
@@ -44,20 +44,20 @@ extern "C" {
         samples: *const f32,
         n_samples: i32,
     ) -> i32;
-    
+
     /// Get number of text segments after transcription
     fn whisper_full_n_segments(ctx: *mut WhisperContext) -> i32;
-    
+
     /// Get text for segment i (0-indexed)
     /// Returns pointer to internal string (don't free)
     fn whisper_full_get_segment_text(ctx: *mut WhisperContext, i_segment: i32) -> *const c_char;
-    
+
     /// Get start time of segment i in milliseconds
     fn whisper_full_get_segment_t0(ctx: *mut WhisperContext, i_segment: i32) -> i64;
-    
+
     /// Get end time of segment i in milliseconds  
     fn whisper_full_get_segment_t1(ctx: *mut WhisperContext, i_segment: i32) -> i64;
-    
+
     /// Free whisper context
     fn whisper_free(ctx: *mut WhisperContext);
 }
@@ -121,7 +121,7 @@ impl TranscriptionPlugin for WhisperCppPlugin {
 
         self.context = Some(ctx);
         self.initialized = true;
-        
+
         eprintln!("✓ Whisper.cpp initialized: {}", self.model_path);
         Ok(())
     }
@@ -136,7 +136,10 @@ impl TranscriptionPlugin for WhisperCppPlugin {
         })?;
 
         // Resample to 16kHz if needed
-        use rubato::{Resampler, SincFixedIn, SincInterpolationType, SincInterpolationParameters, WindowFunction};
+        use rubato::{
+            Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType,
+            WindowFunction,
+        };
 
         let resampled_samples = if audio.sample_rate != 16000 {
             eprintln!("🔄 Resampling {}Hz → 16000Hz", audio.sample_rate);
@@ -155,13 +158,19 @@ impl TranscriptionPlugin for WhisperCppPlugin {
                 params,
                 audio.samples.len(),
                 1,
-            ).map_err(|e| PluginError::TranscriptionFailed(format!("Resample failed: {}", e)))?;
+            )
+            .map_err(|e| PluginError::TranscriptionFailed(format!("Resample failed: {}", e)))?;
 
             let waves_in = vec![audio.samples.clone()];
-            let mut waves_out = resampler.process(&waves_in, None)
+            let mut waves_out = resampler
+                .process(&waves_in, None)
                 .map_err(|e| PluginError::TranscriptionFailed(format!("Resample failed: {}", e)))?;
 
-            eprintln!("✓ Resampled: {} → {} samples", audio.samples.len(), waves_out[0].len());
+            eprintln!(
+                "✓ Resampled: {} → {} samples",
+                audio.samples.len(),
+                waves_out[0].len()
+            );
             waves_out.remove(0)
         } else {
             audio.samples.clone()
@@ -188,7 +197,7 @@ impl TranscriptionPlugin for WhisperCppPlugin {
         }
 
         let n_segments = unsafe { whisper_full_n_segments(ctx) };
-        
+
         if n_segments <= 0 {
             return Ok(Transcript {
                 text: String::new(),
@@ -202,16 +211,12 @@ impl TranscriptionPlugin for WhisperCppPlugin {
 
         for i in 0..n_segments {
             let text_ptr = unsafe { whisper_full_get_segment_text(ctx, i) };
-            
+
             if text_ptr.is_null() {
                 continue;
             }
 
-            let text = unsafe {
-                CStr::from_ptr(text_ptr)
-                    .to_string_lossy()
-                    .into_owned()
-            };
+            let text = unsafe { CStr::from_ptr(text_ptr).to_string_lossy().into_owned() };
 
             let start_ms = unsafe { whisper_full_get_segment_t0(ctx, i) * 10 };
             let end_ms = unsafe { whisper_full_get_segment_t1(ctx, i) * 10 };

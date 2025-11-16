@@ -37,14 +37,14 @@ impl Logger {
     pub fn init() -> Result<(), std::io::Error> {
         let log_dir = Self::get_log_dir()?;
         fs::create_dir_all(&log_dir)?;
-        
+
         let log_path = log_dir.join("app.log");
-        
+
         // Save display string before moving log_path
         let log_path_str = log_path.display().to_string();
-        
+
         let logger = Logger { log_path };
-        
+
         {
             let mut global = match LOGGER.lock() {
                 Ok(guard) => guard,
@@ -54,27 +54,32 @@ impl Logger {
                 }
             };
             *global = Some(logger);
-        }  // Lock dropped here - critical to prevent deadlock!
-        
+        } // Lock dropped here - critical to prevent deadlock!
+
         // Write startup marker (safe now that lock is released)
         Self::log_internal(LogLevel::Info, "Startup", "=== BrainDump Started ===")?;
         Self::log_internal(LogLevel::Info, "Startup", "Version: 3.0.0")?;
-        Self::log_internal(LogLevel::Info, "Startup", &format!("Log file: {}", log_path_str))?;
-        
+        Self::log_internal(
+            LogLevel::Info,
+            "Startup",
+            &format!("Log file: {}", log_path_str),
+        )?;
+
         Ok(())
     }
-    
+
     /// Get platform-specific log directory
     fn get_log_dir() -> Result<PathBuf, std::io::Error> {
-        let home = dirs::home_dir()
-            .ok_or_else(|| std::io::Error::new(
+        let home = dirs::home_dir().ok_or_else(|| {
+            std::io::Error::new(
                 std::io::ErrorKind::NotFound,
-                "Could not find home directory"
-            ))?;
-        
+                "Could not find home directory",
+            )
+        })?;
+
         Ok(home.join(".braindump").join("logs"))
     }
-    
+
     /// Internal logging function
     fn log_internal(level: LogLevel, component: &str, message: &str) -> Result<(), std::io::Error> {
         let global = match LOGGER.lock() {
@@ -84,7 +89,7 @@ impl Logger {
                 poisoned.into_inner()
             }
         };
-        
+
         if let Some(logger) = global.as_ref() {
             let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
             let log_line = format!(
@@ -94,24 +99,24 @@ impl Logger {
                 component,
                 message
             );
-            
+
             let mut file = OpenOptions::new()
                 .create(true)
                 .append(true)
                 .open(&logger.log_path)?;
-            
+
             file.write_all(log_line.as_bytes())?;
             file.flush()?;
-            
+
             // Also print to stderr in debug mode
             if cfg!(debug_assertions) {
                 eprint!("{}", log_line);
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Get the current log file path
     pub fn get_log_path() -> Option<PathBuf> {
         let global = match LOGGER.lock() {

@@ -1,0 +1,171 @@
+{
+  "app": {
+    "title": "BrainDump",
+    "version": "v3.0 - Privacy-first voice journaling"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "close": "Close",
+    "confirm": "Confirm",
+    "copy": "Copy",
+    "export": "Export",
+    "test": "Test",
+    "loading": "Loading...",
+    "ready": "Ready",
+    "error": "Error",
+    "success": "Success",
+    "retry": "Retry",
+    "search": "Search",
+    "new": "New"
+  },
+  "recording": {
+    "startRecording": "Start recording",
+    "stopRecording": "Stop recording",
+    "recording": "Recording",
+    "transcribing": "Transcribing...",
+    "clickToStart": "Click to start recording",
+    "clickToStop": "Click button to stop",
+    "processingAudio": "Processing your audio",
+    "pressButton": "Press the record button to start capturing audio",
+    "transcriptionWillAppear": "Your transcription will appear here",
+    "noSpeechDetected": "No speech detected. Please speak clearly and try again.",
+    "recordingTime": "Recording time"
+  },
+  "status": {
+    "ready": "Ready",
+    "loading": "Loading Whisper model...",
+    "modelLoading": "This may take up to 30 seconds",
+    "modelError": "Model failed to load",
+    "transcribing": "Transcribing...",
+    "recording": "Recording"
+  },
+  "session": {
+    "title": "Sessions",
+    "newSession": "New Session",
+    "currentSession": "Current Session",
+    "noSession": "No session selected",
+    "createToStart": "Create a new session to start chatting",
+    "untitled": "Untitled Session",
+    "deleteConfirm": "Delete session '{title}'? This cannot be undone.",
+    "renameSession": "Rename Session",
+    "sessionCreated": "Session created! Ready for chat.",
+    "brainDump": "Brain Dump"
+  },
+  "messages": {
+    "noMessages": "No messages yet",
+    "typePlaceholder": "Type your message... (Shift+Enter for new line)",
+    "sendMessage": "Send message",
+    "userMessage": "You",
+    "assistantMessage": "Assistant",
+    "sending": "Sending...",
+    "messageSent": "Message sent",
+    "failedToSend": "Failed to send message"
+  },
+  "settings": {
+    "title": "Settings",
+    "provider": "AI Provider",
+    "providerHelp": "Choose which AI service to use for conversations",
+    "apiKeys": "API Keys",
+    "openaiKey": "OpenAI API Key",
+    "claudeKey": "Claude API Key",
+    "getKeyFrom": "Get your key from",
+    "keyConfigured": "Key configured",
+    "keyInvalid": "Key invalid or not configured",
+    "testing": "Testing...",
+    "connectionSuccess": "Connection successful!",
+    "connectionFailed": "Connection failed",
+    "providerSaved": "Provider preference saved",
+    "keySaved": "Key saved",
+    "about": "About",
+    "allDataLocal": "All data stored locally. API keys stored in system keychain.",
+    "openai": "OpenAI (GPT-4) - $0.15/1M tokens",
+    "claude": "Claude (Anthropic) - $3/1M tokens",
+    "language": "Language",
+    "selectLanguage": "Select your preferred language",
+    "languageChanged": "Language changed successfully"
+  },
+  "privacy": {
+    "title": "Privacy",
+    "scan": "Privacy Scan",
+    "issues": "Issues found",
+    "noIssues": "No privacy issues detected",
+    "dangerLevel": "High Risk",
+    "cautionLevel": "Medium Risk"
+  },
+  "export": {
+    "exportSession": "Export Session",
+    "exportSuccess": "Exported to: {path}",
+    "exportFailed": "Export failed",
+    "exportAll": "Export All"
+  },
+  "transcript": {
+    "title": "Current Transcript",
+    "sendToClaude": "Send to Claude",
+    "copyTranscript": "Copy Transcript",
+    "empty": "Press the record button to start capturing audio",
+    "hint": "Your transcription will appear here"
+  },
+  "prompts": {
+    "title": "Prompts",
+    "selectTemplate": "Select Template",
+    "manage": "Manage Prompts",
+    "create": "Create Prompt",
+    "edit": "Edit Prompt",
+    "delete": "Delete Prompt",
+    "preview": "Preview",
+    "name": "Name",
+    "content": "Content",
+    "description": "Description"
+  },
+  "stats": {
+    "title": "Statistics",
+    "totalSessions": "Total Sessions",
+    "totalMessages": "Total Messages",
+    "totalWords": "Total Words",
+    "apiUsage": "API Usage"
+  },
+  "tabs": {
+    "chat": "Chat",
+    "transcript": "Transcript",
+    "prompts": "Prompts",
+    "statistics": "Statistics",
+    "settings": "Settings"
+  },
+  "errors": {
+    "generic": "An unexpected error occurred",
+    "microphonePermission": "Microphone access denied. Please check System Settings → Privacy & Security → Microphone.",
+    "noMicrophone": "No microphone found. Please connect a microphone and try again.",
+    "alreadyRecording": "Already recording. Please stop the current recording first.",
+    "notRecording": "Not currently recording.",
+    "modelNotReady": "AI model is still loading. Please wait a moment...",
+    "timeout": "Operation took too long. Please try again.",
+    "databaseBusy": "Database is busy. Please close other BrainDump windows and try again.",
+    "insufficientSpace": "Not enough disk space. Please free up at least 100MB.",
+    "sessionNotFound": "Session not found",
+    "loadFailed": "Failed to load",
+    "saveFailed": "Failed to save",
+    "apiKeyRequired": "API key required. Please configure in settings.",
+    "networkError": "Network error. Please check your connection."
+  },
+  "shortcuts": {
+    "title": "Keyboard Shortcuts",
+    "record": "Record / Stop",
+    "newSession": "New Session",
+    "search": "Search",
+    "settings": "Settings",
+    "export": "Export Session",
+    "help": "Show Shortcuts",
+    "chatView": "Chat View",
+    "transcriptView": "Transcript View",
+    "promptsView": "Prompts View",
+    "privacyView": "Privacy View"
+  },
+  "search": {
+    "placeholder": "Search transcripts...",
+    "noResults": "No results found",
+    "searching": "Searching..."
+  }
+}

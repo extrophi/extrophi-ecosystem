@@ -18,7 +18,8 @@ fn test_recording_lifecycle() {
             match cmd {
                 AudioCommand::StartRecording => {
                     if recorder.is_some() {
-                        let _ = response_tx.send(AudioResponse::Error("Already recording".to_string()));
+                        let _ =
+                            response_tx.send(AudioResponse::Error("Already recording".to_string()));
                         continue;
                     }
 
@@ -43,7 +44,7 @@ fn test_recording_lifecycle() {
                                 let sample_rate = rec.sample_rate();
                                 let _ = response_tx.send(AudioResponse::RecordingStopped {
                                     samples,
-                                    sample_rate
+                                    sample_rate,
                                 });
                             }
                             Err(e) => {
@@ -71,7 +72,9 @@ fn test_recording_lifecycle() {
 
     // Test 1: Start recording
     let (response_tx, response_rx) = mpsc::channel();
-    audio_tx.send((AudioCommand::StartRecording, response_tx)).unwrap();
+    audio_tx
+        .send((AudioCommand::StartRecording, response_tx))
+        .unwrap();
 
     match response_rx.recv_timeout(Duration::from_secs(2)).unwrap() {
         AudioResponse::RecordingStarted => println!("✓ Recording started successfully"),
@@ -83,7 +86,9 @@ fn test_recording_lifecycle() {
     thread::sleep(Duration::from_millis(500));
 
     let (response_tx, response_rx) = mpsc::channel();
-    audio_tx.send((AudioCommand::GetPeakLevel, response_tx)).unwrap();
+    audio_tx
+        .send((AudioCommand::GetPeakLevel, response_tx))
+        .unwrap();
 
     match response_rx.recv_timeout(Duration::from_secs(2)).unwrap() {
         AudioResponse::PeakLevel(level) => {
@@ -99,22 +104,33 @@ fn test_recording_lifecycle() {
 
     // Test 4: Stop recording and get samples
     let (response_tx, response_rx) = mpsc::channel();
-    audio_tx.send((AudioCommand::StopRecording, response_tx)).unwrap();
+    audio_tx
+        .send((AudioCommand::StopRecording, response_tx))
+        .unwrap();
 
     match response_rx.recv_timeout(Duration::from_secs(2)).unwrap() {
-        AudioResponse::RecordingStopped { samples, sample_rate } => {
+        AudioResponse::RecordingStopped {
+            samples,
+            sample_rate,
+        } => {
             println!("✓ Recording stopped successfully");
             println!("  Samples: {}", samples.len());
             println!("  Sample rate: {} Hz", sample_rate);
-            println!("  Duration: {:.2} seconds", samples.len() as f32 / sample_rate as f32);
+            println!(
+                "  Duration: {:.2} seconds",
+                samples.len() as f32 / sample_rate as f32
+            );
 
             assert!(!samples.is_empty(), "Should have captured audio samples");
             assert!(sample_rate > 0, "Sample rate should be positive");
 
             // Verify we recorded approximately 5 seconds (allow some buffer latency)
             let duration_secs = samples.len() as f32 / sample_rate as f32;
-            assert!(duration_secs >= 4.5 && duration_secs <= 6.0,
-                "Duration should be approximately 5 seconds, got {:.2}", duration_secs);
+            assert!(
+                duration_secs >= 4.5 && duration_secs <= 6.0,
+                "Duration should be approximately 5 seconds, got {:.2}",
+                duration_secs
+            );
         }
         AudioResponse::Error(e) => panic!("Failed to stop recording: {}", e),
         _ => panic!("Unexpected response"),
@@ -122,7 +138,9 @@ fn test_recording_lifecycle() {
 
     // Cleanup
     let (response_tx, _) = mpsc::channel();
-    audio_tx.send((AudioCommand::Shutdown, response_tx)).unwrap();
+    audio_tx
+        .send((AudioCommand::Shutdown, response_tx))
+        .unwrap();
     audio_handle.join().unwrap();
 
     println!("\n✓ All recording tests passed!");
@@ -144,7 +162,9 @@ fn test_error_handling() {
     });
 
     let (response_tx, response_rx) = mpsc::channel();
-    audio_tx.send((AudioCommand::StopRecording, response_tx)).unwrap();
+    audio_tx
+        .send((AudioCommand::StopRecording, response_tx))
+        .unwrap();
 
     match response_rx.recv_timeout(Duration::from_secs(2)).unwrap() {
         AudioResponse::Error(e) => {

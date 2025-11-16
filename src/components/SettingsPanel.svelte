@@ -1,109 +1,167 @@
 <script>
   import { invoke } from '@tauri-apps/api/core';
-  import { onMount } from 'svelte';
+  import { showError, showSuccess } from '../lib/utils/toast.js';
+  import { locale } from 'svelte-i18n';
+  import { languages } from '../lib/i18n/index.js';
 
-  export let isOpen = $state(false);
+  let { isOpen = $bindable(false) } = $props();
 
-  let apiKey = $state('');
-  let hasKey = $state(false);
-  let testStatus = $state('idle'); // 'idle' | 'testing' | 'success' | 'error'
-  let errorMessage = $state('');
-  let successMessage = $state('');
+  let selectedProvider = $state('openai'); // 'openai' or 'claude'
+  let openaiKey = $state('');
+  let claudeKey = $state('');
+  let isTestingOpenai = $state(false);
+  let isTestingClaude = $state(false);
+  let openaiStatus = $state(null); // 'success' | 'error' | null
+  let claudeStatus = $state(null);
+  let selectedLanguage = $state('en'); // Language preference
 
-  onMount(async () => {
-    await checkApiKey();
+  // Load existing keys and selected provider on mount
+  $effect(() => {
+    checkExistingKeys();
+    loadSelectedProvider();
+    loadLanguagePreference();
   });
 
-  async function checkApiKey() {
+  async function loadSelectedProvider() {
     try {
-      hasKey = await invoke('has_api_key');
-    } catch (error) {
-      console.error('Failed to check API key:', error);
+      selectedProvider = await invoke('get_selected_provider');
+    } catch (e) {
+      console.error('Failed to load provider:', e);
+      selectedProvider = 'openai'; // fallback
     }
   }
 
-  async function handleSave() {
-    if (!apiKey || apiKey.trim().length === 0) {
-      errorMessage = 'Please enter an API key';
-      return;
-    }
-
+  async function loadLanguagePreference() {
     try {
-      await invoke('store_api_key', { key: apiKey.trim() });
-      successMessage = 'API key saved successfully';
-      errorMessage = '';
-      hasKey = true;
-      apiKey = ''; // Clear input after saving
-
-      // Clear success message after 3 seconds
-      setTimeout(() => {
-        successMessage = '';
-      }, 3000);
-    } catch (error) {
-      errorMessage = `Failed to save API key: ${error}`;
-      successMessage = '';
+      const lang = await invoke('get_language_preference');
+      selectedLanguage = lang;
+      locale.set(lang); // Update i18n locale
+    } catch (e) {
+      console.error('Failed to load language preference:', e);
+      selectedLanguage = 'en'; // fallback to English
     }
   }
 
-  async function handleTest() {
-    testStatus = 'testing';
-    errorMessage = '';
-    successMessage = '';
-
+  async function checkExistingKeys() {
     try {
-      const isValid = await invoke('test_api_key');
-      if (isValid) {
-        testStatus = 'success';
-        successMessage = 'API key is valid! ✓';
-        setTimeout(() => {
-          testStatus = 'idle';
-          successMessage = '';
-        }, 3000);
-      } else {
-        testStatus = 'error';
-        errorMessage = 'API key is invalid or expired';
-        setTimeout(() => {
-          testStatus = 'idle';
-        }, 3000);
-      }
-    } catch (error) {
-      testStatus = 'error';
-      errorMessage = `Connection test failed: ${error}`;
-      setTimeout(() => {
-        testStatus = 'idle';
-      }, 3000);
+      const hasOpenai = await invoke('has_openai_key');
+      const hasClaude = await invoke('has_api_key');
+
+      if (hasOpenai) openaiStatus = 'success';
+      if (hasClaude) claudeStatus = 'success';
+    } catch (e) {
+      console.error('Failed to check keys:', e);
     }
   }
 
-  async function handleDelete() {
-    if (!confirm('Are you sure you want to delete your API key?')) {
-      return;
-    }
-
+  async function handleProviderChange() {
     try {
-      await invoke('delete_api_key');
-      hasKey = false;
-      successMessage = 'API key deleted';
-      errorMessage = '';
+      await invoke('set_selected_provider', { provider: selectedProvider });
+      showSuccess('Provider preference saved');
+    } catch (e) {
+      showError(`Failed to save provider: ${e}`);
+    }
+  }
 
-      setTimeout(() => {
-        successMessage = '';
-      }, 3000);
-    } catch (error) {
-      errorMessage = `Failed to delete API key: ${error}`;
+  async function handleLanguageChange() {
+    try {
+      await invoke('set_language_preference', { language: selectedLanguage });
+      locale.set(selectedLanguage); // Update i18n locale immediately
+      showSuccess('Language changed successfully');
+    } catch (e) {
+      showError(`Failed to save language preference: ${e}`);
     }
   }
 
   function handleClose() {
     isOpen = false;
-    errorMessage = '';
-    successMessage = '';
-    apiKey = '';
+  }
+
+  async function saveOpenaiKey() {
+    if (!openaiKey.trim()) {
+      showError('Please enter an API key');
+      return;
+    }
+
+    if (!openaiKey.startsWith('sk-')) {
+      showError('OpenAI keys start with sk-');
+      return;
+    }
+
+    try {
+      await invoke('store_openai_key', { key: openaiKey });
+      showSuccess('OpenAI key saved');
+      openaiStatus = 'success';
+      openaiKey = ''; // Clear input for security
+    } catch (e) {
+      showError(`Failed to save key: ${e}`);
+      openaiStatus = 'error';
+    }
+  }
+
+  async function testOpenaiConnection() {
+    isTestingOpenai = true;
+    try {
+      const success = await invoke('test_openai_connection');
+      if (success) {
+        showSuccess('OpenAI connection successful!');
+        openaiStatus = 'success';
+      } else {
+        showError('OpenAI connection failed');
+        openaiStatus = 'error';
+      }
+    } catch (e) {
+      showError(`Connection test failed: ${e}`);
+      openaiStatus = 'error';
+    } finally {
+      isTestingOpenai = false;
+    }
+  }
+
+  async function saveClaudeKey() {
+    if (!claudeKey.trim()) {
+      showError('Please enter an API key');
+      return;
+    }
+
+    if (!claudeKey.startsWith('sk-ant-')) {
+      showError('Claude keys start with sk-ant-');
+      return;
+    }
+
+    try {
+      await invoke('store_api_key', { key: claudeKey });
+      showSuccess('Claude key saved');
+      claudeStatus = 'success';
+      claudeKey = ''; // Clear input
+    } catch (e) {
+      showError(`Failed to save key: ${e}`);
+      claudeStatus = 'error';
+    }
+  }
+
+  async function testClaudeConnection() {
+    isTestingClaude = true;
+    try {
+      const success = await invoke('test_api_key');
+      if (success) {
+        showSuccess('Claude connection successful!');
+        claudeStatus = 'success';
+      } else {
+        showError('Claude connection failed');
+        claudeStatus = 'error';
+      }
+    } catch (e) {
+      showError(`Connection test failed: ${e}`);
+      claudeStatus = 'error';
+    } finally {
+      isTestingClaude = false;
+    }
   }
 </script>
 
 {#if isOpen}
-  <div class="overlay" onclick={handleClose}></div>
+  <div class="overlay" onclick={handleClose} onkeydown={(e) => e.key === 'Escape' && handleClose()} role="presentation" tabindex="-1"></div>
 
   <div class="settings-panel">
     <div class="panel-header">
@@ -117,84 +175,121 @@
     </div>
 
     <div class="panel-content">
-      <div class="section">
-        <h3>Claude API Key</h3>
-        <p class="section-description">
-          Enter your Anthropic API key to enable AI-powered journaling features.
-        </p>
+      <section class="provider-section">
+        <h3>AI Provider</h3>
+        <p class="help-text">Choose which AI service to use for conversations</p>
 
-        {#if hasKey}
-          <div class="key-status">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <circle cx="10" cy="10" r="8" stroke="#34c759" stroke-width="2"/>
-              <path d="M6 10l3 3 5-6" stroke="#34c759" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            <span>API key is configured</span>
-          </div>
-        {:else}
-          <div class="key-status warning">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <circle cx="10" cy="10" r="8" stroke="#ff9500" stroke-width="2"/>
-              <path d="M10 6v5M10 14v.5" stroke="#ff9500" stroke-width="2" stroke-linecap="round"/>
-            </svg>
-            <span>No API key configured</span>
-          </div>
-        {/if}
+        <div class="provider-choice">
+          <label>
+            <input
+              type="radio"
+              bind:group={selectedProvider}
+              value="openai"
+              onchange={handleProviderChange}
+            />
+            OpenAI (GPT-4) - $0.15/1M tokens
+          </label>
 
-        <div class="input-group">
-          <label for="api-key-input">API Key</label>
-          <input
-            id="api-key-input"
-            type="password"
-            bind:value={apiKey}
-            placeholder="sk-ant-..."
-            class="api-key-input"
-          />
-          <p class="input-hint">
-            Get your API key from <a href="https://console.anthropic.com/" target="_blank" rel="noopener noreferrer">console.anthropic.com</a>
-          </p>
+          <label>
+            <input
+              type="radio"
+              bind:group={selectedProvider}
+              value="claude"
+              onchange={handleProviderChange}
+            />
+            Claude (Anthropic) - $3/1M tokens
+          </label>
         </div>
+      </section>
 
-        <div class="button-group">
-          <button class="btn btn-primary" onclick={handleSave} disabled={!apiKey || apiKey.trim().length === 0}>
-            Save API Key
-          </button>
+      <section class="api-keys-section">
+        <h3>API Keys</h3>
 
-          {#if hasKey}
+        <!-- OpenAI Section -->
+        <div class="key-group">
+          <h4>OpenAI API Key {#if openaiStatus === 'success'}✓{/if}</h4>
+          <p class="help-text">
+            Get your key from <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI Platform</a>
+          </p>
+
+          <div class="input-row">
+            <input
+              type="password"
+              bind:value={openaiKey}
+              placeholder="sk-..."
+              class:error={openaiStatus === 'error'}
+              class:success={openaiStatus === 'success'}
+            />
+            <button onclick={saveOpenaiKey}>Save</button>
             <button
-              class="btn btn-secondary"
-              onclick={handleTest}
-              disabled={testStatus === 'testing'}
+              onclick={testOpenaiConnection}
+              disabled={isTestingOpenai || openaiStatus !== 'success'}
             >
-              {#if testStatus === 'testing'}
-                Testing...
-              {:else if testStatus === 'success'}
-                ✓ Valid
-              {:else if testStatus === 'error'}
-                ✗ Invalid
-              {:else}
-                Test Connection
-              {/if}
+              {isTestingOpenai ? 'Testing...' : 'Test'}
             </button>
+          </div>
 
-            <button class="btn btn-danger" onclick={handleDelete}>
-              Delete Key
-            </button>
+          {#if openaiStatus === 'success'}
+            <div class="status-message success">✓ Key configured</div>
+          {/if}
+          {#if openaiStatus === 'error'}
+            <div class="status-message error">⚠ Key invalid or not configured</div>
           {/if}
         </div>
 
-        {#if successMessage}
-          <div class="message success">
-            {successMessage}
-          </div>
-        {/if}
+        <!-- Claude Section -->
+        <div class="key-group">
+          <h4>Claude API Key {#if claudeStatus === 'success'}✓{/if}</h4>
+          <p class="help-text">
+            Get your key from <a href="https://console.anthropic.com/settings/keys" target="_blank">Anthropic Console</a>
+          </p>
 
-        {#if errorMessage}
-          <div class="message error">
-            {errorMessage}
+          <div class="input-row">
+            <input
+              type="password"
+              bind:value={claudeKey}
+              placeholder="sk-ant-..."
+              class:error={claudeStatus === 'error'}
+              class:success={claudeStatus === 'success'}
+            />
+            <button onclick={saveClaudeKey}>Save</button>
+            <button
+              onclick={testClaudeConnection}
+              disabled={isTestingClaude || claudeStatus !== 'success'}
+            >
+              {isTestingClaude ? 'Testing...' : 'Test'}
+            </button>
           </div>
-        {/if}
-      </div>
+
+          {#if claudeStatus === 'success'}
+            <div class="status-message success">✓ Key configured</div>
+          {/if}
+          {#if claudeStatus === 'error'}
+            <div class="status-message error">⚠ Key invalid or not configured</div>
+          {/if}
+        </div>
+      </section>
+
+      <section class="language-section">
+        <h3>Language</h3>
+        <p class="help-text">Select your preferred language</p>
+
+        <div class="language-selector">
+          <select bind:value={selectedLanguage} onchange={handleLanguageChange} class="language-select">
+            {#each languages as lang}
+              <option value={lang.code}>
+                {lang.flag} {lang.nativeName} ({lang.name})
+              </option>
+            {/each}
+          </select>
+        </div>
+      </section>
+
+      <section class="info-section">
+        <h3>About</h3>
+        <p>BrainDump v3.0 - Privacy-first voice journaling</p>
+        <p>All data stored locally. API keys stored in system keychain.</p>
+      </section>
     </div>
   </div>
 {/if}
@@ -223,12 +318,14 @@
     left: 50%;
     transform: translate(-50%, -50%);
     width: 90%;
-    max-width: 500px;
+    max-width: 600px;
     background: white;
     border-radius: 12px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
     z-index: 1001;
     animation: slideUp 0.3s ease-out;
+    max-height: 85vh;
+    overflow-y: auto;
   }
 
   @keyframes slideUp {
@@ -248,6 +345,10 @@
     align-items: center;
     padding: 20px 24px;
     border-bottom: 1px solid #e0e0e0;
+    position: sticky;
+    top: 0;
+    background: white;
+    border-radius: 12px 12px 0 0;
   }
 
   .panel-header h2 {
@@ -277,154 +378,192 @@
 
   .panel-content {
     padding: 24px;
-    max-height: 70vh;
-    overflow-y: auto;
   }
 
-  .section {
-    margin-bottom: 24px;
+  section {
+    margin-bottom: 2rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid #e0e0e0;
   }
 
-  .section h3 {
+  section:last-child {
+    border-bottom: none;
+  }
+
+  section h3 {
     margin: 0 0 8px 0;
     font-size: 1.1rem;
     font-weight: 600;
     color: #000000;
   }
 
-  .section-description {
-    margin: 0 0 16px 0;
-    font-size: 0.9rem;
-    color: #666666;
-    line-height: 1.5;
+  .provider-choice {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    margin-top: 1rem;
   }
 
-  .key-status {
+  .provider-choice label {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 12px;
-    background: #f0f9f0;
-    border: 1px solid #34c759;
+    gap: 0.5rem;
+    padding: 1rem;
+    border: 2px solid #d0d0d0;
     border-radius: 8px;
-    margin-bottom: 16px;
-    font-size: 0.9rem;
-    color: #1d7a2f;
+    cursor: pointer;
+    transition: all 0.2s ease;
   }
 
-  .key-status.warning {
-    background: #fff8e6;
-    border-color: #ff9500;
-    color: #8f5000;
+  .provider-choice label:hover {
+    border-color: #2196F3;
   }
 
-  .input-group {
-    margin-bottom: 16px;
+  .provider-choice label:has(input:checked) {
+    border-color: #2196F3;
+    background: #e3f2fd;
   }
 
-  .input-group label {
-    display: block;
-    margin-bottom: 8px;
-    font-size: 0.9rem;
+  .provider-choice input[type="radio"] {
+    margin: 0;
+  }
+
+  .key-group {
+    margin-bottom: 1.5rem;
+  }
+
+  .key-group:last-child {
+    margin-bottom: 0;
+  }
+
+  .key-group h4 {
+    margin: 0 0 8px 0;
+    font-size: 1rem;
     font-weight: 600;
     color: #333333;
   }
 
-  .api-key-input {
-    width: 100%;
-    padding: 12px;
+  .input-row {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 8px;
+  }
+
+  input[type="password"] {
+    flex: 1;
+    padding: 10px 12px;
     border: 1px solid #d0d0d0;
-    border-radius: 8px;
+    border-radius: 6px;
     font-size: 0.95rem;
     font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
     transition: border-color 0.2s ease;
   }
 
-  .api-key-input:focus {
+  input[type="password"]:focus {
     outline: none;
-    border-color: #007aff;
+    border-color: #2196F3;
   }
 
-  .input-hint {
-    margin: 8px 0 0 0;
-    font-size: 0.85rem;
-    color: #999999;
+  input.success {
+    border-color: #4caf50;
+    background: #f0f9f0;
   }
 
-  .input-hint a {
-    color: #007aff;
-    text-decoration: none;
+  input.error {
+    border-color: #f44336;
+    background: #fff0f0;
   }
 
-  .input-hint a:hover {
-    text-decoration: underline;
-  }
-
-  .button-group {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-
-  .btn {
-    padding: 10px 20px;
+  button {
+    padding: 10px 18px;
     border: none;
-    border-radius: 8px;
+    border-radius: 6px;
+    background: #2196F3;
+    color: white;
+    cursor: pointer;
     font-size: 0.9rem;
     font-weight: 600;
-    cursor: pointer;
     transition: all 0.2s ease;
   }
 
-  .btn:disabled {
+  button:hover:not(:disabled) {
+    background: #1976D2;
+  }
+
+  button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
 
-  .btn-primary {
-    background: #007aff;
-    color: white;
+  .status-message {
+    margin-top: 8px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 0.875rem;
   }
 
-  .btn-primary:hover:not(:disabled) {
-    background: #0056b3;
+  .status-message.success {
+    background: #e8f5e9;
+    color: #2e7d32;
+    border: 1px solid #4caf50;
   }
 
-  .btn-secondary {
-    background: #f5f5f5;
-    color: #333333;
-    border: 1px solid #d0d0d0;
+  .status-message.error {
+    background: #ffebee;
+    color: #c62828;
+    border: 1px solid #f44336;
   }
 
-  .btn-secondary:hover:not(:disabled) {
-    background: #e8e8e8;
+  .help-text {
+    font-size: 0.875rem;
+    color: #666666;
+    margin: 4px 0;
+    line-height: 1.4;
   }
 
-  .btn-danger {
-    background: #ff3b30;
-    color: white;
+  a {
+    color: #2196F3;
+    text-decoration: none;
   }
 
-  .btn-danger:hover:not(:disabled) {
-    background: #d32f2f;
+  a:hover {
+    text-decoration: underline;
   }
 
-  .message {
-    margin-top: 16px;
-    padding: 12px;
-    border-radius: 8px;
+  .info-section p {
+    margin: 8px 0;
     font-size: 0.9rem;
+    color: #666666;
   }
 
-  .message.success {
-    background: #f0f9f0;
-    border: 1px solid #34c759;
-    color: #1d7a2f;
+  .language-section {
+    margin-bottom: 2rem;
+    padding-bottom: 2rem;
+    border-bottom: 1px solid #e0e0e0;
   }
 
-  .message.error {
-    background: #fff0f0;
-    border: 1px solid #ff3b30;
-    color: #c41e3a;
+  .language-selector {
+    margin-top: 1rem;
+  }
+
+  .language-select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    background: #ffffff;
+    color: #000000;
+    cursor: pointer;
+    outline: none;
+    transition: border-color 0.2s ease;
+  }
+
+  .language-select:focus {
+    border-color: #2196F3;
+  }
+
+  .language-select:hover {
+    border-color: #2196F3;
   }
 </style>
