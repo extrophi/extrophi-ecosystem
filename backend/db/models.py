@@ -41,7 +41,7 @@ class ContentORM(Base):
     embedding = Column(Vector(1536), nullable=True)
 
     # Metadata for platform-specific data
-    metadata = Column(JSONB, nullable=True, default={})
+    extra_metadata = Column(JSONB, nullable=True, default={})
 
     # Timestamps
     scraped_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -89,7 +89,7 @@ class AuthorORM(Base):
     # Links and metadata
     profile_url = Column(Text, nullable=True)
     avatar_url = Column(Text, nullable=True)
-    metadata = Column(JSONB, nullable=True, default={})
+    extra_metadata = Column(JSONB, nullable=True, default={})
 
     # Timestamps
     discovered_at = Column(DateTime, default=datetime.utcnow, nullable=False)
