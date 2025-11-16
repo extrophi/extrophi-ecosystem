@@ -228,7 +228,7 @@
               disabled={isLoading}
               class="message-input"
               rows="1"
-            />
+            ></textarea>
 
             <button
               onclick={sendMessage}

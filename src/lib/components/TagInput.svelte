@@ -193,14 +193,16 @@
       placeholder="Add tag..."
       class="tag-input"
       autocomplete="off"
+      role="combobox"
       aria-label="Add tag to session"
       aria-autocomplete="list"
+      aria-controls="tag-dropdown"
       aria-expanded={showDropdown}
     />
   </div>
 
   {#if showDropdown && (filteredTags().length > 0 || canCreateNew())}
-    <div class="dropdown" role="listbox">
+    <div id="tag-dropdown" class="dropdown" role="listbox">
       {#each filteredTags() as tag, index}
         <button
           class="dropdown-item"

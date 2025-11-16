@@ -161,7 +161,7 @@
 </script>
 
 {#if isOpen}
-  <div class="overlay" onclick={handleClose}></div>
+  <div class="overlay" onclick={handleClose} onkeydown={(e) => e.key === 'Escape' && handleClose()} role="presentation" tabindex="-1"></div>
 
   <div class="settings-panel">
     <div class="panel-header">

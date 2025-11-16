@@ -1044,10 +1044,6 @@
     background: #ebebeb;
   }
 
-  .transcript-item.selected {
-    background: #e0e0e0;
-  }
-
   .item-timestamp {
     font-size: 0.75rem;
     color: #666666;
@@ -1174,30 +1170,6 @@
     transform: scale(1.1);
   }
 
-  /* Pulse Ring Animation */
-  .pulse-ring {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 100%;
-    height: 100%;
-    border-radius: 50%;
-    border: 2px solid #5CBDB9;
-    animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  }
-
-  @keyframes pulse-ring {
-    0% {
-      opacity: 1;
-      transform: translate(-50%, -50%) scale(1);
-    }
-    100% {
-      opacity: 0;
-      transform: translate(-50%, -50%) scale(1.4);
-    }
-  }
-
   /* ==================== Status Display ==================== */
   .status-section {
     text-align: center;
@@ -1293,25 +1265,6 @@
     color: #bbbbbb;
   }
 
-  /* ==================== Transcript Container ==================== */
-  .transcript-container {
-    background: #f9f9f9;
-    border: 1px solid #e0e0e0;
-    border-radius: 12px;
-    padding: 2rem;
-    animation: slideUp 0.3s ease-out;
-  }
-
-  @keyframes slideUp {
-    from {
-      opacity: 0;
-      transform: translateY(20px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
 
   .transcript-header {
     display: flex;

@@ -5,12 +5,12 @@
 /**
  * Retries an async operation with exponential backoff
  * @param {Function} operation - The async function to retry
- * @param {Object} options - Retry options
- * @param {number} options.maxRetries - Maximum number of retry attempts (default: 3)
- * @param {number} options.baseDelay - Base delay in milliseconds (default: 1000)
- * @param {number} options.maxDelay - Maximum delay in milliseconds (default: 10000)
- * @param {Function} options.onRetry - Callback function called before each retry
- * @param {Function} options.shouldRetry - Function to determine if error is retryable
+ * @param {Object} [options] - Retry options
+ * @param {number} [options.maxRetries=3] - Maximum number of retry attempts
+ * @param {number} [options.baseDelay=1000] - Base delay in milliseconds
+ * @param {number} [options.maxDelay=10000] - Maximum delay in milliseconds
+ * @param {Function} [options.onRetry] - Callback function called before each retry
+ * @param {Function} [options.shouldRetry] - Function to determine if error is retryable (default: always retry)
  * @returns {Promise} - Result of the operation
  */
 export async function retryWithBackoff(operation, options = {}) {

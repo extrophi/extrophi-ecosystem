@@ -3,7 +3,7 @@
 
   let { level = 0, visible = false, width = 300, height = 60 } = $props();
 
-  let canvas;
+  let canvas = $state(null);
   let waveformData = [];
   let animationFrameId = null;
   const maxDataPoints = 150;

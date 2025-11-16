@@ -10,7 +10,7 @@
    * - onRemove: callback when remove button is clicked
    */
 
-  let { tag, size = 'medium', removable = false, onRemove } = $props();
+  let { tag, size = 'medium', removable = false, onRemove = undefined } = $props();
 
   function handleRemove(event) {
     event.stopPropagation();

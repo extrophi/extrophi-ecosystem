@@ -30,7 +30,7 @@
   const timeAgo = (dateString) => {
     const date = new Date(dateString);
     const now = new Date();
-    const seconds = Math.floor((now - date) / 1000);
+    const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
     if (seconds < 60) return 'Just now';
     const minutes = Math.floor(seconds / 60);
@@ -313,8 +313,9 @@
 
   <!-- Restore Confirmation Modal -->
   {#if showRestoreConfirmation}
-    <div class="modal-overlay" onclick={cancelRestore}>
-      <div class="modal-content" onclick={(e) => e.stopPropagation()}>
+    <div class="modal-overlay" onclick={cancelRestore} onkeydown={(e) => e.key === 'Escape' && cancelRestore()} role="dialog" aria-modal="true" tabindex="-1">
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <div class="modal-content" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="document">
         <h3>Confirm Restore</h3>
         <p>
           Are you sure you want to restore from this backup?

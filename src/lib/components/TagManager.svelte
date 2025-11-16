@@ -170,7 +170,7 @@
 </script>
 
 {#if isOpen}
-  <div class="modal-backdrop" onclick={handleBackdropClick} role="dialog" aria-modal="true" aria-labelledby="tag-manager-title">
+  <div class="modal-backdrop" onclick={handleBackdropClick} onkeydown={(e) => e.key === 'Escape' && handleClose()} role="dialog" aria-modal="true" aria-labelledby="tag-manager-title" tabindex="-1">
     <div class="modal-content">
       <div class="modal-header">
         <h2 id="tag-manager-title">Manage Tags</h2>
@@ -224,6 +224,7 @@
             <div class="tag-item" class:editing={editingTagId === tag.id}>
               {#if editingTagId === tag.id}
                 <div class="edit-form">
+                  <!-- svelte-ignore a11y_autofocus -->
                   <input
                     type="text"
                     bind:value={editName}
