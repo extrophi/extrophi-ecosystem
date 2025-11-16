@@ -1,0 +1,162 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'claude/**'  # Run CI on all claude/* branches
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust-check:
+    name: Rust Check & Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          src-tauri/target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Install whisper-cpp (macOS)
+      if: runner.os == 'macOS'
+      run: brew install whisper-cpp
+
+    - name: Install whisper-cpp (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential pkg-config
+        git clone https://github.com/ggerganov/whisper.cpp
+        cd whisper.cpp
+        make
+        sudo make install
+        sudo ldconfig
+
+    - name: Cargo check
+      working-directory: src-tauri
+      run: cargo check --all-features
+
+    - name: Cargo test
+      working-directory: src-tauri
+      run: cargo test --all-features
+
+    - name: Cargo clippy
+      working-directory: src-tauri
+      run: cargo clippy --all-features -- -D warnings
+
+  frontend-check:
+    name: Frontend Check & Test
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Svelte type check
+      run: npm run check
+
+    - name: Run tests
+      run: npm test
+
+    - name: Lint
+      run: npm run lint
+
+  build-verification:
+    name: Build Verification
+    runs-on: ${{ matrix.os }}
+    needs: [rust-check, frontend-check]
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install whisper-cpp (macOS)
+      if: runner.os == 'macOS'
+      run: brew install whisper-cpp
+
+    - name: Install whisper-cpp (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential pkg-config libgtk-3-dev webkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+        git clone https://github.com/ggerganov/whisper.cpp
+        cd whisper.cpp
+        make
+        sudo make install
+        sudo ldconfig
+
+    - name: Install frontend dependencies
+      run: npm ci
+
+    - name: Build application
+      run: npm run tauri:build
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: braindump-${{ runner.os }}
+        path: |
+          src-tauri/target/release/bundle/
+        retention-days: 7
+
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Cargo audit
+      working-directory: src-tauri
+      run: |
+        cargo install cargo-audit
+        cargo audit
+
+    - name: NPM audit
+      run: npm audit --audit-level=moderate

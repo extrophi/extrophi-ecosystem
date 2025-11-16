@@ -1,0 +1,192 @@
+name: QA Checklist
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+  issue_comment:
+    types: [created]
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  create-qa-checklist:
+    name: Create QA Checklist
+    if: |
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get PR files changed
+        id: files
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          FILES=$(gh pr view ${{ github.event.pull_request.number }} --json files --jq '.files[].path' | head -20)
+
+          echo "files<<EOF" >> $GITHUB_OUTPUT
+          echo "$FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Determine QA scope
+        id: scope
+        run: |
+          FILES="${{ steps.files.outputs.files }}"
+
+          # Check what areas are affected
+          if echo "$FILES" | grep -q "src-tauri/src/commands.rs"; then
+            echo "backend_qa=true" >> $GITHUB_OUTPUT
+          fi
+
+          if echo "$FILES" | grep -q "src/components/"; then
+            echo "frontend_qa=true" >> $GITHUB_OUTPUT
+          fi
+
+          if echo "$FILES" | grep -q "src-tauri/src/db/"; then
+            echo "database_qa=true" >> $GITHUB_OUTPUT
+          fi
+
+          if echo "$FILES" | grep -q "src-tauri/src/services/.*api"; then
+            echo "api_qa=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Post QA checklist comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --body "## 🔍 QA/QC Checklist
+
+          Before merging this PR, complete the following quality assurance checks:
+
+          ### ✅ Automated Checks (Required)
+          - [ ] All CI jobs passing (Rust check, Frontend check, Build verification)
+          - [ ] Security audit passing (no high/critical vulnerabilities)
+          - [ ] Test coverage enforcement passing
+          - [ ] No merge conflicts with base branch
+
+          ### 🧪 Testing (Required)
+          - [ ] All unit tests passing locally (\`cargo test\` + \`npm test\`)
+          - [ ] New features have corresponding tests
+          - [ ] Integration tests passing (if applicable)
+          - [ ] Manual testing completed (see below)
+
+          ### 📝 Code Quality (Required)
+          - [ ] Code follows project style guidelines
+          - [ ] No \`console.log\` or debug statements left in code
+          - [ ] Error handling implemented properly
+          - [ ] Comments added for complex logic
+          - [ ] TODOs documented in issues (not left in code)
+
+          $(if [ "${{ steps.scope.outputs.backend_qa }}" = "true" ]; then
+            echo "### 🔧 Backend QA (Commands Modified)"
+            echo "- [ ] Command functions have proper error handling"
+            echo "- [ ] Database transactions are atomic"
+            echo "- [ ] API calls have timeout/retry logic"
+            echo "- [ ] Sensitive data not logged"
+          fi)
+
+          $(if [ "${{ steps.scope.outputs.frontend_qa }}" = "true" ]; then
+            echo "### 🎨 Frontend QA (Components Modified)"
+            echo "- [ ] UI renders correctly in light mode"
+            echo "- [ ] Components use proper Svelte 5 runes syntax"
+            echo "- [ ] No accessibility issues (ARIA labels, keyboard nav)"
+            echo "- [ ] Loading states handled gracefully"
+            echo "- [ ] Error states displayed to user"
+          fi)
+
+          $(if [ "${{ steps.scope.outputs.database_qa }}" = "true" ]; then
+            echo "### 🗄️ Database QA (Schema Modified)"
+            echo "- [ ] Migration script tested (fresh install)"
+            echo "- [ ] Migration tested (existing database upgrade)"
+            echo "- [ ] Indexes added for queries"
+            echo "- [ ] No data loss scenarios"
+            echo "- [ ] Rollback tested"
+          fi)
+
+          $(if [ "${{ steps.scope.outputs.api_qa }}" = "true" ]; then
+            echo "### 🌐 API QA (External APIs Modified)"
+            echo "- [ ] API key validation working"
+            echo "- [ ] Rate limiting handled"
+            echo "- [ ] Network errors handled gracefully"
+            echo "- [ ] API responses validated/sanitized"
+            echo "- [ ] Fallback behavior defined"
+          fi)
+
+          ### 📱 Manual Testing (Required)
+          - [ ] Fresh install tested (delete \`~/.braindump\`, reinstall app)
+          - [ ] Upgrade tested (existing user flow)
+          - [ ] Core feature flow tested end-to-end
+          - [ ] Edge cases tested (empty inputs, large files, etc.)
+          - [ ] Performance acceptable (no lag, fast response times)
+
+          ### 📚 Documentation (If Applicable)
+          - [ ] README updated (if user-facing changes)
+          - [ ] CHANGELOG.md updated
+          - [ ] API documentation updated (if API changes)
+          - [ ] Code comments added for complex logic
+
+          ### 🔒 Security (If Applicable)
+          - [ ] No secrets committed (API keys, tokens, passwords)
+          - [ ] User input sanitized (XSS, SQL injection prevention)
+          - [ ] Authentication/authorization checked
+          - [ ] Sensitive data encrypted
+
+          ---
+
+          **Reviewer**: Check all applicable boxes before approving.
+          **Author**: Complete all required checks before requesting review.
+
+          🤖 Automated QA checklist - [View CI results](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+
+      - name: Add QA label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr edit ${{ github.event.pull_request.number }} \
+            --add-label "needs-qa"
+
+  check-qa-completion:
+    name: Check QA Completion
+    if: github.event_name == 'issue_comment' && contains(github.event.comment.body, '/qa-complete')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Verify commenter is contributor
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Only allow PR author or repo members to mark QA complete
+          AUTHOR="${{ github.event.issue.user.login }}"
+          COMMENTER="${{ github.event.comment.user.login }}"
+
+          if [ "$COMMENTER" != "$AUTHOR" ]; then
+            echo "❌ Only PR author can mark QA complete"
+            exit 1
+          fi
+
+      - name: Mark QA complete
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUM=$(echo "${{ github.event.issue.html_url }}" | grep -oP '\d+$')
+
+          gh pr comment $PR_NUM --body "✅ **QA Checklist Completed**
+
+          QA has been marked complete by @${{ github.event.comment.user.login }}.
+
+          **Next Steps**:
+          - Ensure all CI checks are passing
+          - Request code review from team members
+          - Address any review feedback
+          - Merge when approved
+
+          ---
+          🤖 QA status updated"
+
+          gh pr edit $PR_NUM \
+            --remove-label "needs-qa" \
+            --add-label "qa-complete"
