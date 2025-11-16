@@ -1,9 +1,7 @@
 """YouTube scraper implementing BaseScraper interface."""
 
-import os
 import re
 from datetime import datetime
-from typing import Any
 
 from youtube_transcript_api import YouTubeTranscriptApi
 

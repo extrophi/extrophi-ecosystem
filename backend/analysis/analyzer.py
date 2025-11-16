@@ -48,7 +48,8 @@ class ContentAnalyzer:
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are an expert copywriting analyst. Always respond with valid JSON.",
+                        "content": "You are an expert copywriting analyst. "
+                        "Always respond with valid JSON.",
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -111,7 +112,8 @@ class ContentAnalyzer:
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are an expert at identifying content patterns. Always respond with valid JSON.",
+                        "content": "You are an expert at identifying content patterns. "
+                        "Always respond with valid JSON.",
                     },
                     {"role": "user", "content": prompt},
                 ],

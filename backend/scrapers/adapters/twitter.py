@@ -1,8 +1,6 @@
 """Twitter/X scraper implementing BaseScraper interface."""
 
-import os
 from datetime import datetime
-from typing import Any
 
 from playwright.async_api import Browser, Page, async_playwright
 
