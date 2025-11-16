@@ -1,0 +1,301 @@
+name: Create Implementation Issues
+
+on:
+  workflow_dispatch:  # Manual trigger
+    inputs:
+      dry_run:
+        description: 'Dry run (don't actually create issues)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+permissions:
+  issues: write
+
+jobs:
+  create-issues:
+    name: Create GitHub Issues from Documentation
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify documentation exists
+        run: |
+          if [ ! -f "docs/dev/GITHUB_ISSUES_FOR_WEB_TEAM.md" ]; then
+            echo "❌ Error: docs/dev/GITHUB_ISSUES_FOR_WEB_TEAM.md not found"
+            exit 1
+          fi
+          echo "✅ Issue documentation found"
+
+      - name: Create Issue #1 - Provider Selection Persistence
+        if: inputs.dry_run == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "Implement Provider Selection Persistence" \
+            --label "bug,P1-critical,backend,database" \
+            --body "$(cat <<'EOF'
+          **Priority**: P1 (Critical)
+          **Estimated Effort**: 2-3 hours
+          **Component**: Backend, Database
+
+          ## Description
+          User selects OpenAI or Claude in Settings Panel but the selection is not saved to database. On app restart, it always defaults to "openai".
+
+          ## Current Behavior
+          - User selects provider via radio button in `SettingsPanel.svelte`
+          - Selection stored only in UI state variable `selectedProvider`
+          - App restart → resets to default ("openai")
+
+          ## Expected Behavior
+          - Selection saved to database settings table
+          - Loaded on app startup
+          - Persists across restarts
+
+          ## Implementation Steps
+          1. Add `provider_preference` column to settings table (or create settings table if missing)
+          2. Create Rust command: `save_provider_preference(provider: String)`
+          3. Create Rust command: `get_provider_preference() -> String`
+          4. Update `SettingsPanel.svelte` to call `save_provider_preference` on radio button change
+          5. Load preference on app startup, set UI state
+
+          ## Files to Modify
+          - `src-tauri/src/db/mod.rs` - Add settings table/column
+          - `src-tauri/src/commands.rs` - Add save/get commands
+          - `src/components/SettingsPanel.svelte` (lines 7, 138-156)
+
+          ## Testing Requirements
+          - [ ] Unit test: `save_provider_preference` writes to database
+          - [ ] Unit test: `get_provider_preference` reads from database
+          - [ ] Integration test: Restart app, verify preference persists
+          - [ ] Manual QA: Toggle provider, restart, verify UI reflects saved choice
+
+          ## Acceptance Criteria
+          - [ ] Provider selection persists across app restarts
+          - [ ] Default is "openai" for fresh installs
+          - [ ] Radio button reflects saved preference on load
+          - [ ] All tests passing
+
+          ## Definition of Done
+          - [ ] Implementation complete
+          - [ ] Tests written and passing
+          - [ ] Code reviewed
+          - [ ] Manual QA completed
+          - [ ] Documentation updated (if needed)
+
+          ---
+          📄 **Reference**: `docs/dev/GITHUB_ISSUES_FOR_WEB_TEAM.md` - Issue #1
+          🤖 Created via automated workflow
+          EOF
+          )"
+
+      - name: Create Issue #2 - Provider Backend Routing
+        if: inputs.dry_run == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "Connect Provider Selection to Backend Chat Routing" \
+            --label "bug,P1-critical,backend,frontend" \
+            --body "$(cat <<'EOF'
+          **Priority**: P1 (Critical)
+          **Estimated Effort**: 4-5 hours
+          **Component**: Backend, Frontend
+
+          ## Description
+          Chat always uses Claude API regardless of which provider is selected in the UI.
+
+          ## Current Behavior
+          - User selects "OpenAI" in settings
+          - Clicks chat send button
+          - `ChatPanel.svelte:38` hardcoded to call `send_message_to_claude`
+          - Claude API used even though OpenAI was selected
+
+          ## Expected Behavior
+          - Chat checks selected provider preference
+          - Routes to `send_openai_message` if OpenAI selected
+          - Routes to `send_message_to_claude` if Claude selected
+
+          ## Implementation Steps
+          1. Pass selected provider to ChatPanel component
+          2. Create routing logic in `handleSend()` function
+          3. Call correct backend command based on provider:
+             - `send_openai_message` for OpenAI
+             - `send_message_to_claude` for Claude
+          4. Display provider indicator in chat UI
+          5. Handle API errors differently per provider
+
+          ## Files to Modify
+          - `src/components/ChatPanel.svelte` (line 38)
+          - `src/App.svelte` - Pass provider state to ChatPanel
+
+          ## Testing Requirements
+          - [ ] Unit test: Provider routing logic
+          - [ ] Integration test: OpenAI selected → OpenAI API called
+          - [ ] Integration test: Claude selected → Claude API called
+          - [ ] Manual QA: Send messages with each provider, verify correct API used
+          - [ ] Error handling test: Invalid API key shows provider-specific error
+
+          ## Acceptance Criteria
+          - [ ] Selecting OpenAI uses OpenAI GPT-4 API
+          - [ ] Selecting Claude uses Claude API
+          - [ ] Chat UI shows which provider is active
+          - [ ] Error messages specific to provider used
+          - [ ] All tests passing
+
+          ## Definition of Done
+          - [ ] Implementation complete
+          - [ ] Tests written and passing
+          - [ ] Code reviewed
+          - [ ] Manual QA completed
+          - [ ] Documentation updated
+
+          ---
+          📄 **Reference**: `docs/dev/GITHUB_ISSUES_FOR_WEB_TEAM.md` - Issue #2
+          🤖 Created via automated workflow
+          EOF
+          )"
+
+      - name: Create remaining P1 issues (3-4)
+        if: inputs.dry_run == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Issue #3: Prompt Management CRUD
+          gh issue create \
+            --title "Create Prompt Management UI (CRUD Interface)" \
+            --label "feature,P1-critical,frontend,backend" \
+            --body "**Priority**: P1 (Critical) | **Effort**: 12-16 hours
+
+          Users can SELECT prompt templates but cannot CREATE, EDIT, or DELETE them. Must manually edit \`.md\` files in \`/prompts/\` directory.
+
+          **Full specs**: \`docs/dev/GITHUB_ISSUES_FOR_WEB_TEAM.md\` Issue #3
+
+          **Testing Requirements**:
+          - [ ] Unit tests for CRUD operations
+          - [ ] Integration tests for file I/O
+          - [ ] Manual QA for UI interactions
+          - [ ] Edge case tests (empty name, special chars, etc.)
+
+          **Definition of Done**: Implementation + tests + code review + QA"
+
+          # Issue #4: Session Management
+          gh issue create \
+            --title "Add Session Management (Delete & Rename)" \
+            --label "feature,P1-critical,frontend,backend" \
+            --body "**Priority**: P1 (Critical) | **Effort**: 6-8 hours
+
+          Can create and switch sessions but cannot delete or rename them. Sessions accumulate forever with no cleanup option.
+
+          **Full specs**: \`docs/dev/GITHUB_ISSUES_FOR_WEB_TEAM.md\` Issue #4
+
+          **Testing Requirements**:
+          - [ ] Unit tests for delete/rename commands
+          - [ ] Integration test: Delete active session switches to another
+          - [ ] Integration test: Delete cascades to messages
+          - [ ] Manual QA for UI confirmations
+
+          **Definition of Done**: Implementation + tests + code review + QA"
+
+      - name: Create P2 issues (5-7)
+        if: inputs.dry_run == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Issue #5: Whisper Model Selection
+          gh issue create \
+            --title "Add Whisper Model Selection" \
+            --label "feature,P2-high,ml,ui" \
+            --body "**Priority**: P2 (High) | **Effort**: 16-20 hours
+
+          App is hardcoded to use \`ggml-base.bin\` model. Users can't choose different models for speed/accuracy tradeoffs.
+
+          **Full specs**: \`docs/dev/GITHUB_ISSUES_FOR_WEB_TEAM.md\` Issue #5
+
+          **Testing Requirements**: Model switching, download progress, storage management tests required."
+
+          # Issue #6: Recording Search
+          gh issue create \
+            --title "Implement Recording Search" \
+            --label "feature,P2-high,database,frontend" \
+            --body "**Priority**: P2 (High) | **Effort**: 8-10 hours
+
+          Search box exists in sidebar but does nothing. Need full-text search on transcripts and messages.
+
+          **Full specs**: \`docs/dev/GITHUB_ISSUES_FOR_WEB_TEAM.md\` Issue #6
+
+          **Testing Requirements**: Search accuracy, performance (< 500ms for 1000 messages) tests required."
+
+          # Issue #7: Audio Playback
+          gh issue create \
+            --title "Add Audio Playback Feature" \
+            --label "feature,P2-high,audio,storage" \
+            --body "**Priority**: P2 (High) | **Effort**: 12-16 hours
+
+          Original audio recordings are not saved. Users can't replay audio to verify transcription accuracy.
+
+          **Full specs**: \`docs/dev/GITHUB_ISSUES_FOR_WEB_TEAM.md\` Issue #7
+
+          **Testing Requirements**: Storage limits, playback controls, cleanup automation tests required."
+
+      - name: Create summary issue
+        if: inputs.dry_run == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create \
+            --title "📊 BrainDump v3.0 Implementation Tracker" \
+            --label "epic,tracking" \
+            --body "## Implementation Progress Tracker
+
+          This epic tracks the implementation of all missing features for BrainDump v3.0 MVP.
+
+          ### 🎯 Priority 1: Critical (Must complete before v1.0)
+          - [ ] #TBD - Provider Selection Persistence (3 hours)
+          - [ ] #TBD - Provider Backend Routing (5 hours)
+          - [ ] #TBD - Prompt Management CRUD (16 hours)
+          - [ ] #TBD - Session Management (8 hours)
+
+          **P1 Subtotal**: 32 hours
+
+          ### 🔥 Priority 2: High (Should complete for v1.0)
+          - [ ] #TBD - Whisper Model Selection (20 hours)
+          - [ ] #TBD - Recording Search (10 hours)
+          - [ ] #TBD - Audio Playback (16 hours)
+
+          **P2 Subtotal**: 46 hours
+
+          ### 📈 Progress
+          - **Total Hours**: 78 hours (P1 + P2)
+          - **Completed**: 0 / 7 issues
+          - **Status**: 🟡 In Progress
+
+          ### 🚀 Quick Links
+          - [Handoff Documentation](../blob/main/docs/dev/HANDOFF_TO_WEB_TEAM.md)
+          - [Project Status](../blob/main/docs/dev/PROJECT_STATUS_2025-11-16.md)
+          - [CI/CD Guide](../blob/main/docs/dev/GITHUB_ACTIONS_RESEARCH_2025.md)
+
+          ### 📝 Notes
+          - All issues require tests before closing
+          - Code review required for all PRs
+          - Manual QA checklist must be completed
+          - Update this tracker as issues close
+
+          ---
+          🤖 Auto-generated tracker - Update issue numbers after creation"
+
+      - name: Summary
+        run: |
+          echo "## ✅ Issues Created Successfully"
+          echo ""
+          echo "Created 7 implementation issues + 1 tracker:"
+          echo "- 4 P1 (Critical) issues: 32 hours"
+          echo "- 3 P2 (High) issues: 46 hours"
+          echo "- 1 Epic tracker"
+          echo ""
+          echo "View issues: ${{ github.server_url }}/${{ github.repository }}/issues"
