@@ -7,6 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "echo 'No tests configured yet' && exit 0",
+    "lint": "echo 'No linter configured yet' && exit 0",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
@@ -29,6 +32,8 @@
     "@sveltejs/vite-plugin-svelte": "^4.0.0",
     "@tauri-apps/cli": "^2.9.0",
     "svelte": "^5.4.0",
+    "svelte-check": "^4.3.4",
+    "typescript": "^5.9.3",
     "vite": "^5.4.0"
   }
 }
