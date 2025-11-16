@@ -29,9 +29,11 @@ rubato = "0.15"
 tokio = { version = "1.43", features = ["full"] }
 reqwest = { version = "0.12", features = ["json"] }
 keyring = "2.3"
+dotenv = "0.15"
 
 [build-dependencies]
 tauri-build = { version = "2.5", features = [] }
+pkg-config = "0.3"
 
 [dev-dependencies]
 tokio = { version = "1.43", features = ["full"] }

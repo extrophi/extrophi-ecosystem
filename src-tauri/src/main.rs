@@ -9,23 +9,61 @@ use tauri::Emitter;
 
 mod commands;
 
+fn import_env_keys_to_keychain() {
+    use keyring::Entry;
+
+    // Import OpenAI key from .env to keychain
+    if let Ok(openai_key) = std::env::var("OPENAI_API_KEY") {
+        if !openai_key.is_empty() && openai_key != "your-openai-key-here" {
+            braindump::logging::info("Keychain", "Importing OpenAI API key from .env");
+            if let Ok(entry) = Entry::new("braindump", "openai_api_key") {
+                if let Err(e) = entry.set_password(&openai_key) {
+                    braindump::logging::error("Keychain", &format!("Failed to store OpenAI key: {}", e));
+                } else {
+                    braindump::logging::info("Keychain", "OpenAI API key stored in keychain successfully");
+                }
+            }
+        }
+    }
+
+    // Import Claude key from .env to keychain
+    if let Ok(claude_key) = std::env::var("CLAUDE_API_KEY") {
+        if !claude_key.is_empty() && claude_key != "your-claude-key-here" {
+            braindump::logging::info("Keychain", "Importing Claude API key from .env");
+            if let Ok(entry) = Entry::new("braindump", "claude_api_key") {
+                if let Err(e) = entry.set_password(&claude_key) {
+                    braindump::logging::error("Keychain", &format!("Failed to store Claude key: {}", e));
+                } else {
+                    braindump::logging::info("Keychain", "Claude API key stored in keychain successfully");
+                }
+            }
+        }
+    }
+}
+
 fn main() {
     eprintln!("=== MAIN STARTED ===");
     eprintln!("Current dir: {:?}", std::env::current_dir());
     eprintln!("Executable: {:?}", std::env::current_exe());
     eprintln!("About to initialize logger...");
-    
+
+    // Load .env file if it exists
+    dotenv::dotenv().ok();
+
     // Initialize logger FIRST - so we can capture all errors
     if let Err(e) = braindump::logging::Logger::init() {
         eprintln!("Failed to initialize logger: {}", e);
         // Continue anyway - logging failure shouldn't block startup
     }
-    
+
     eprintln!("=== LOGGER INITIALIZED ===");
-    
+
     braindump::logging::info("Startup", "BrainDump v3.0.0 initializing");
     braindump::logging::info("Startup", &format!("Current directory: {:?}", std::env::current_dir()));
     braindump::logging::info("Startup", &format!("Executable path: {:?}", std::env::current_exe()));
+
+    // Auto-import API keys from .env to keychain on first run
+    import_env_keys_to_keychain();
     
     let db_path = dirs::home_dir()
         .unwrap_or_else(|| {

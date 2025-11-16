@@ -2,7 +2,7 @@
   import { invoke } from '@tauri-apps/api/core';
   import { showError, showSuccess } from '../lib/utils/toast.js';
 
-  export let isOpen = $state(false);
+  let { isOpen = $bindable(false) } = $props();
 
   let selectedProvider = $state('openai'); // 'openai' or 'claude'
   let openaiKey = $state('');

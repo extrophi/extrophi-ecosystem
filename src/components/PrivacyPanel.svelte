@@ -1,12 +1,11 @@
 <script>
   import { scanText } from '../lib/privacy_scanner';
 
-  export let text = '';
-  export let visible = $state(false);
+  let { text = '', visible = $bindable(false) } = $props();
 
-  $: matches = scanText(text);
-  $: dangerMatches = matches.filter(m => m.severity === 'danger');
-  $: cautionMatches = matches.filter(m => m.severity === 'caution');
+  let matches = $derived(scanText(text));
+  let dangerMatches = $derived(matches.filter(m => m.severity === 'danger'));
+  let cautionMatches = $derived(matches.filter(m => m.severity === 'caution'));
 </script>
 
 <aside class="privacy-panel" class:visible>

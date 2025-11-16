@@ -1,9 +1,8 @@
 <script>
   import { invoke } from '@tauri-apps/api/core';
 
-  export let messages = $state([]);
-  export let currentSession = $state(null);
-  export let onSendMessage = null;
+  // Use $props() for component props in Svelte 5
+  let { messages = $bindable([]), currentSession = $bindable(null), onSendMessage = null } = $props();
 
   let inputText = $state('');
   let isLoading = $state(false);
