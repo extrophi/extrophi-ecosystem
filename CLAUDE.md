@@ -218,9 +218,41 @@ class UnifiedContent(BaseModel):
 
 ---
 
-## ScraperAPI Integration Patterns
+## Hybrid Scraping Stack (UPDATED: Day 1 Research Complete)
 
-### Cost Structure
+**Research Completed**: 76 files, 20,946 lines in 45 minutes (7 parallel agents)
+
+### Platform Decision: Hybrid FREE + Paid
+
+**Primary (FREE Tier)**:
+- **Jina.ai Reader API**: 50,000 pages/month FREE (static content)
+  - Blogs, documentation, articles
+  - Clean markdown conversion
+  - No credit card required
+  - Cost: $0/month
+
+**Fallback (Paid)**:
+- **ScraperAPI**: $49/mo, 100K credits (complex sites only)
+  - JS-rendered pages (Twitter, Amazon)
+  - Anti-bot protection needed
+  - Structured data endpoints
+  - Cost: $49/month (only if FREE tier exhausted)
+
+**Platform APIs (FREE)**:
+- Twitter: IAC-024 Playwright (no API costs)
+- YouTube: youtube-transcript-api (no costs)
+- Reddit: PRAW (1,000 req/10min, FREE)
+
+**Total MVP Cost**: $0-89/month (vs competitors $49-299/mo)
+
+### Cost Structure Breakdown
+
+**Jina.ai (FREE)**:
+- 50K pages/month = $0
+- Static content (80% of use cases)
+- markdown conversion built-in
+
+**ScraperAPI (Fallback)**:
 - **Hobby Plan**: $49/mo, 100K credits
 - **Simple page**: $0.00049 (2,040 pages/$1)
 - **JS-rendered**: $0.0024 (+5 credits, 417 pages/$1)
@@ -366,13 +398,19 @@ ORDER BY similarity DESC;
 - Testing: cURL/Postman (no GUI for MVP)
 - Week 2: Add Tauri + Svelte frontend
 
-### Budget Allocation
-- ScraperAPI: $49/mo (100K credits)
-- OpenAI: ~$20/mo (bulk analysis)
-- PostgreSQL: $0 (local or Hetzner VPS $4/mo)
-- Redis: $0 (free tier)
-- ChromaDB: $0 (local)
-- **Total**: ~$69/mo
+### Budget Allocation (UPDATED: Day 1 Research)
+- **Jina.ai**: $0/mo (50K pages FREE tier)
+- **ScraperAPI**: $0-49/mo (fallback only)
+- **OpenAI**: ~$20/mo (bulk analysis)
+- **PostgreSQL**: $0 (local or Hetzner VPS $4/mo)
+- **Redis**: $0 (free tier)
+- **ChromaDB**: $0 (local)
+- **Total MVP**: $20-89/mo (vs TweetHunter $49-99/mo, SuperX $29/mo)
+
+**Competitive Advantage**:
+- TweetHunter: Twitter-only, $49-99/mo, 5.6K users
+- SuperX: Twitter-only Chrome extension, $29/mo, 9K users
+- **Us**: Multi-platform (Twitter + YouTube + Reddit + Web), $20-89/mo, pattern detection
 
 ### Platform Priorities (Must-Have Day 3)
 1. ✅ Twitter (reuse IAC-024)
