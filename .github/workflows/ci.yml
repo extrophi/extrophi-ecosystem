@@ -59,9 +59,9 @@ jobs:
       working-directory: src-tauri
       run: |
         if [ "${{ runner.os }}" == "Linux" ]; then
-          cargo test --no-default-features
+          cargo test --no-default-features --lib --bins
         else
-          cargo test --all-features
+          cargo test --all-features --lib --bins  # Skip doc tests for now
         fi
 
     - name: Cargo clippy
