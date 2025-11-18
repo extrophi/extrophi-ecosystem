@@ -9,12 +9,13 @@ from backend.api.routes import (
     health_router,
     query_router,
     scrape_router,
+    tokens_router,
 )
 
 app = FastAPI(
     title="IAC-032 Unified Scraper",
     version="0.1.0",
-    description="Multi-platform content intelligence engine",
+    description="Multi-platform content intelligence engine with $EXTROPY token system",
 )
 
 setup_cors(app)
@@ -25,6 +26,7 @@ app.include_router(scrape_router)
 app.include_router(analyze_router)
 app.include_router(query_router)
 app.include_router(api_keys_router)
+app.include_router(tokens_router)
 
 
 @app.get("/")

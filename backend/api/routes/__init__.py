@@ -5,6 +5,7 @@ from backend.api.routes.api_keys import router as api_keys_router
 from backend.api.routes.health import router as health_router
 from backend.api.routes.query import router as query_router
 from backend.api.routes.scrape import router as scrape_router
+from backend.api.routes.tokens import router as tokens_router
 
 __all__ = [
     "health_router",
@@ -12,4 +13,5 @@ __all__ = [
     "analyze_router",
     "query_router",
     "api_keys_router",
+    "tokens_router",
 ]
