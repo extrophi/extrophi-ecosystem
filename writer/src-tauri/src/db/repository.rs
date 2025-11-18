@@ -1099,6 +1099,232 @@ impl Repository {
         )?;
         Ok(())
     }
+
+    // ===== Cards (V8: Privacy & Publishing) =====
+
+    /// Create a new card
+    pub fn create_card(&self, card: &Card) -> SqliteResult<i64> {
+        self.conn.execute(
+            "INSERT INTO cards (content, privacy_level, published, git_sha, category, session_id, message_id, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                card.content,
+                card.privacy_level.as_ref().map(|p| p.as_str()),
+                card.published as i32,
+                card.git_sha,
+                card.category.as_ref().map(|c| c.as_str()),
+                card.session_id,
+                card.message_id,
+                card.created_at.to_rfc3339(),
+                card.updated_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Get a card by ID
+    pub fn get_card(&self, id: i64) -> SqliteResult<Card> {
+        self.conn.query_row(
+            "SELECT id, content, privacy_level, published, git_sha, category, session_id, message_id, created_at, updated_at
+             FROM cards WHERE id = ?1",
+            params![id],
+            |row| {
+                let privacy_level_str: Option<String> = row.get(2)?;
+                let category_str: Option<String> = row.get(5)?;
+
+                Ok(Card {
+                    id: Some(row.get(0)?),
+                    content: row.get(1)?,
+                    privacy_level: privacy_level_str.and_then(|s| PrivacyLevel::from_str(&s).ok()),
+                    published: row.get::<_, i32>(3)? != 0,
+                    git_sha: row.get(4)?,
+                    category: category_str.and_then(|s| CardCategory::from_str(&s).ok()),
+                    session_id: row.get(6)?,
+                    message_id: row.get(7)?,
+                    created_at: row.get::<_, String>(8)?.parse().unwrap_or(Utc::now()),
+                    updated_at: row.get::<_, String>(9)?.parse().unwrap_or(Utc::now()),
+                })
+            },
+        )
+    }
+
+    /// List all cards with optional filtering
+    pub fn list_cards(
+        &self,
+        privacy_level: Option<&PrivacyLevel>,
+        category: Option<&CardCategory>,
+        published_only: bool,
+        limit: usize,
+    ) -> SqliteResult<Vec<Card>> {
+        let mut query = String::from(
+            "SELECT id, content, privacy_level, published, git_sha, category, session_id, message_id, created_at, updated_at
+             FROM cards WHERE 1=1"
+        );
+
+        if privacy_level.is_some() {
+            query.push_str(" AND privacy_level = ?1");
+        }
+        if category.is_some() {
+            query.push_str(&format!(
+                " AND category = ?{}",
+                if privacy_level.is_some() { 2 } else { 1 }
+            ));
+        }
+        if published_only {
+            let param_num = if privacy_level.is_some() && category.is_some() {
+                3
+            } else if privacy_level.is_some() || category.is_some() {
+                2
+            } else {
+                1
+            };
+            query.push_str(&format!(" AND published = ?{}", param_num));
+        }
+
+        query.push_str(&format!(
+            " ORDER BY created_at DESC LIMIT ?{}",
+            if privacy_level.is_some() && category.is_some() && published_only {
+                4
+            } else if (privacy_level.is_some() && category.is_some())
+                || (privacy_level.is_some() && published_only)
+                || (category.is_some() && published_only)
+            {
+                3
+            } else if privacy_level.is_some() || category.is_some() || published_only {
+                2
+            } else {
+                1
+            }
+        ));
+
+        let mut stmt = self.conn.prepare(&query)?;
+
+        // Build params
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![];
+        if let Some(pl) = privacy_level {
+            params_vec.push(Box::new(pl.as_str().to_string()));
+        }
+        if let Some(cat) = category {
+            params_vec.push(Box::new(cat.as_str().to_string()));
+        }
+        if published_only {
+            params_vec.push(Box::new(1));
+        }
+        params_vec.push(Box::new(limit as i64));
+
+        let params_refs: Vec<&dyn rusqlite::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
+
+        let cards = stmt.query_map(&*params_refs, |row| {
+            let privacy_level_str: Option<String> = row.get(2)?;
+            let category_str: Option<String> = row.get(5)?;
+
+            Ok(Card {
+                id: Some(row.get(0)?),
+                content: row.get(1)?,
+                privacy_level: privacy_level_str.and_then(|s| PrivacyLevel::from_str(&s).ok()),
+                published: row.get::<_, i32>(3)? != 0,
+                git_sha: row.get(4)?,
+                category: category_str.and_then(|s| CardCategory::from_str(&s).ok()),
+                session_id: row.get(6)?,
+                message_id: row.get(7)?,
+                created_at: row.get::<_, String>(8)?.parse().unwrap_or(Utc::now()),
+                updated_at: row.get::<_, String>(9)?.parse().unwrap_or(Utc::now()),
+            })
+        })?;
+
+        cards.collect()
+    }
+
+    /// Update a card
+    pub fn update_card(&self, card: &Card) -> SqliteResult<usize> {
+        let id = card
+            .id
+            .ok_or_else(|| rusqlite::Error::InvalidParameterName("Card ID is required".to_string()))?;
+
+        self.conn.execute(
+            "UPDATE cards
+             SET content = ?1, privacy_level = ?2, published = ?3, git_sha = ?4, category = ?5, updated_at = ?6
+             WHERE id = ?7",
+            params![
+                card.content,
+                card.privacy_level.as_ref().map(|p| p.as_str()),
+                card.published as i32,
+                card.git_sha,
+                card.category.as_ref().map(|c| c.as_str()),
+                Utc::now().to_rfc3339(),
+                id,
+            ],
+        )
+    }
+
+    /// Update card privacy level
+    pub fn update_card_privacy(&self, id: i64, privacy_level: &PrivacyLevel) -> SqliteResult<usize> {
+        self.conn.execute(
+            "UPDATE cards SET privacy_level = ?1, updated_at = ?2 WHERE id = ?3",
+            params![privacy_level.as_str(), Utc::now().to_rfc3339(), id],
+        )
+    }
+
+    /// Update card category
+    pub fn update_card_category(&self, id: i64, category: &CardCategory) -> SqliteResult<usize> {
+        self.conn.execute(
+            "UPDATE cards SET category = ?1, updated_at = ?2 WHERE id = ?3",
+            params![category.as_str(), Utc::now().to_rfc3339(), id],
+        )
+    }
+
+    /// Mark card as published with git SHA
+    pub fn publish_card(&self, id: i64, git_sha: &str) -> SqliteResult<usize> {
+        self.conn.execute(
+            "UPDATE cards SET published = 1, git_sha = ?1, updated_at = ?2 WHERE id = ?3",
+            params![git_sha, Utc::now().to_rfc3339(), id],
+        )
+    }
+
+    /// Unpublish card
+    pub fn unpublish_card(&self, id: i64) -> SqliteResult<usize> {
+        self.conn.execute(
+            "UPDATE cards SET published = 0, git_sha = NULL, updated_at = ?1 WHERE id = ?2",
+            params![Utc::now().to_rfc3339(), id],
+        )
+    }
+
+    /// Delete a card
+    pub fn delete_card(&self, id: i64) -> SqliteResult<usize> {
+        self.conn.execute("DELETE FROM cards WHERE id = ?1", params![id])
+    }
+
+    /// Get publishable cards (BUSINESS + IDEAS levels only)
+    pub fn get_publishable_cards(&self, limit: usize) -> SqliteResult<Vec<Card>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, content, privacy_level, published, git_sha, category, session_id, message_id, created_at, updated_at
+             FROM cards
+             WHERE privacy_level IN ('BUSINESS', 'IDEAS')
+             ORDER BY created_at DESC
+             LIMIT ?1"
+        )?;
+
+        let cards = stmt.query_map(params![limit], |row| {
+            let privacy_level_str: Option<String> = row.get(2)?;
+            let category_str: Option<String> = row.get(5)?;
+
+            Ok(Card {
+                id: Some(row.get(0)?),
+                content: row.get(1)?,
+                privacy_level: privacy_level_str.and_then(|s| PrivacyLevel::from_str(&s).ok()),
+                published: row.get::<_, i32>(3)? != 0,
+                git_sha: row.get(4)?,
+                category: category_str.and_then(|s| CardCategory::from_str(&s).ok()),
+                session_id: row.get(6)?,
+                message_id: row.get(7)?,
+                created_at: row.get::<_, String>(8)?.parse().unwrap_or(Utc::now()),
+                updated_at: row.get::<_, String>(9)?.parse().unwrap_or(Utc::now()),
+            })
+        })?;
+
+        cards.collect()
+    }
 }
 
 #[cfg(test)]
