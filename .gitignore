@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Environment Variables - CRITICAL
 .env
 .env.*
@@ -29,10 +30,13 @@ secrets.json
 firebase-admin-sdk.json
 service-account*.json
 
+=======
+>>>>>>> iac032/main
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
+<<<<<<< HEAD
 
 # Node
 node_modules/
@@ -48,10 +52,45 @@ out/
 .cache/
 
 # IDE and Editors
+=======
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+.virtualenv/
+
+# UV (Python package manager)
+.uv/
+uv.lock
+
+# IDEs
+>>>>>>> iac032/main
 .vscode/
 .idea/
 *.swp
 *.swo
+<<<<<<< HEAD
 .DS_Store
 
 # Logs
@@ -71,3 +110,84 @@ backups/
 # Session data
 sessions/
 .sessions/
+=======
+*~
+.DS_Store
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Node modules (for Tauri/Svelte later)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Tauri build output (Week 2)
+src-tauri/target/
+src-tauri/Cargo.lock
+
+# Data directories
+data/
+*.csv
+*.json.bak
+*.parquet
+
+# Scraped content cache
+cache/
+.cache/
+
+# Session files
+*_session.json
+cookies.txt
+browser_profile/
+
+# API keys (NEVER COMMIT)
+*_api_key.txt
+credentials.json
+secrets.yaml
+
+# Documentation builds
+docs/_build/
+docs/dev/*/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Thumbnails
+._*
+
+# Large files
+*.mp4
+*.avi
+*.mkv
+*.wav
+*.mp3
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+>>>>>>> iac032/main

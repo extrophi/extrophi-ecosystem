@@ -110,6 +110,20 @@ DOCS_TO_SCRAPE = {
             "/README.md",
             "/examples/main/README.md",
         ]
+<<<<<<< HEAD
+=======
+    },
+    "claude-code": {
+        "base_url": "https://docs.claude.com",
+        "pages": [
+            "/en/docs/claude-code/overview",
+            "/en/docs/claude-code/sub-agents",
+            "/en/docs/claude-code/cli-usage",
+            "/en/docs/claude-code/tutorials",
+            "/en/docs/claude-code/sdk",
+            "/en/docs/claude-code/best-practices",
+        ]
+>>>>>>> iac032/main
     }
 }
 

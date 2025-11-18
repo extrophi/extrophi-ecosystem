@@ -1,0 +1,252 @@
+name: Test Enforcement
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  pull-requests: write
+  checks: write
+  statuses: write
+
+jobs:
+  enforce-tests:
+    name: Enforce Test Requirements
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for proper diff
+
+      - name: Get changed files
+        id: changes
+        run: |
+          # Get list of changed files
+          git diff --name-only origin/${{ github.base_ref }}...HEAD > changed_files.txt
+
+          # Check if Rust code changed
+          if grep -qE '^src-tauri/.*\.rs$' changed_files.txt; then
+            echo "rust_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "rust_changed=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Check if frontend code changed
+          if grep -qE '^src/.*\.(svelte|ts|js)$' changed_files.txt; then
+            echo "frontend_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "frontend_changed=false" >> $GITHUB_OUTPUT
+          fi
+
+          # Check if tests were added/modified
+          if grep -qE '(test|spec)\.(rs|ts|js)$' changed_files.txt; then
+            echo "tests_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "tests_changed=false" >> $GITHUB_OUTPUT
+          fi
+
+          cat changed_files.txt
+
+      - name: Check Rust test coverage
+        if: steps.changes.outputs.rust_changed == 'true'
+        id: rust_coverage
+        run: |
+          # Count .rs files changed (excluding tests)
+          RUST_FILES=$(grep -cE '^src-tauri/src/.*\.rs$' changed_files.txt || echo "0")
+
+          # Count test files changed
+          TEST_FILES=$(grep -cE '^src-tauri/.*test.*\.rs$' changed_files.txt || echo "0")
+
+          echo "rust_files=$RUST_FILES" >> $GITHUB_OUTPUT
+          echo "test_files=$TEST_FILES" >> $GITHUB_OUTPUT
+
+          if [ "$RUST_FILES" -gt 0 ] && [ "$TEST_FILES" -eq 0 ]; then
+            echo "needs_tests=true" >> $GITHUB_OUTPUT
+            echo "⚠️ Rust code changed but no tests added"
+          else
+            echo "needs_tests=false" >> $GITHUB_OUTPUT
+            echo "✅ Tests included with Rust changes"
+          fi
+
+      - name: Check frontend test coverage
+        if: steps.changes.outputs.frontend_changed == 'true'
+        id: frontend_coverage
+        run: |
+          # Count frontend files changed
+          FRONTEND_FILES=$(grep -cE '^src/.*\.(svelte|ts|js)$' changed_files.txt || echo "0")
+
+          # Count test/spec files
+          TEST_FILES=$(grep -cE '^src/.*\.(test|spec)\.(ts|js)$' changed_files.txt || echo "0")
+
+          echo "frontend_files=$FRONTEND_FILES" >> $GITHUB_OUTPUT
+          echo "test_files=$TEST_FILES" >> $GITHUB_OUTPUT
+
+          if [ "$FRONTEND_FILES" -gt 0 ] && [ "$TEST_FILES" -eq 0 ]; then
+            echo "needs_tests=true" >> $GITHUB_OUTPUT
+            echo "⚠️ Frontend code changed but no tests added"
+          else
+            echo "needs_tests=false" >> $GITHUB_OUTPUT
+            echo "✅ Tests included with frontend changes"
+          fi
+
+      - name: Comment on PR if tests missing
+        if: steps.rust_coverage.outputs.needs_tests == 'true' || steps.frontend_coverage.outputs.needs_tests == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --body "## ⚠️ Test Coverage Required
+
+          This PR modifies code but does not include corresponding tests.
+
+          ### Changes Detected
+          $(if [ "${{ steps.rust_coverage.outputs.needs_tests }}" = "true" ]; then
+            echo "- **Rust**: ${{ steps.rust_coverage.outputs.rust_files }} files changed, ${{ steps.rust_coverage.outputs.test_files }} test files added"
+          fi)
+          $(if [ "${{ steps.frontend_coverage.outputs.needs_tests }}" = "true" ]; then
+            echo "- **Frontend**: ${{ steps.frontend_coverage.outputs.frontend_files }} files changed, ${{ steps.frontend_coverage.outputs.test_files }} test files added"
+          fi)
+
+          ### Required Actions
+          - [ ] Add unit tests for new/modified functions
+          - [ ] Add integration tests for feature changes
+          - [ ] Ensure all tests pass locally (\`cargo test\` / \`npm test\`)
+          - [ ] Update this PR with test files
+
+          ### Testing Guidelines
+          - **Rust**: Add tests in \`src-tauri/src/**/tests.rs\` or \`#[cfg(test)] mod tests\`
+          - **Frontend**: Add \`.test.ts\` or \`.spec.ts\` files alongside components
+          - **Coverage Target**: >60% for new code
+
+          ### Reference
+          - [Testing Guide](../blob/main/docs/dev/TESTING_REPORT_2025-11-15.md)
+          - [CI/CD Best Practices](../blob/main/docs/dev/GITHUB_ACTIONS_RESEARCH_2025.md)
+
+          **This PR will be blocked from merging until tests are added.**
+
+          ---
+          🤖 Automated test enforcement - if tests are not applicable, comment \`/skip-tests [reason]\` and request review"
+
+      - name: Add label if tests missing
+        if: steps.rust_coverage.outputs.needs_tests == 'true' || steps.frontend_coverage.outputs.needs_tests == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr edit ${{ github.event.pull_request.number }} \
+            --add-label "needs-tests,blocked"
+
+      - name: Remove blocked label if tests present
+        if: steps.rust_coverage.outputs.needs_tests == 'false' && steps.frontend_coverage.outputs.needs_tests == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr edit ${{ github.event.pull_request.number }} \
+            --remove-label "needs-tests,blocked" || true
+
+      - name: Set status check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const needsTests = '${{ steps.rust_coverage.outputs.needs_tests }}' === 'true' ||
+                               '${{ steps.frontend_coverage.outputs.needs_tests }}' === 'true';
+
+            const state = needsTests ? 'failure' : 'success';
+            const description = needsTests
+              ? 'Tests required for code changes'
+              : 'Test coverage requirements met';
+
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.payload.pull_request.head.sha,
+              state: state,
+              context: 'Test Coverage Enforcement',
+              description: description,
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            });
+
+  check-test-failures:
+    name: Report Test Failures
+    runs-on: ubuntu-latest
+    needs: []  # Runs independently
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run Rust tests
+        id: rust_tests
+        working-directory: src-tauri
+        continue-on-error: true
+        run: |
+          cargo test --all-features -- --nocapture 2>&1 | tee test_output.txt
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+
+      - name: Run frontend tests
+        id: frontend_tests
+        continue-on-error: true
+        run: |
+          npm ci
+          npm test 2>&1 | tee test_output.txt || true
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+
+      - name: Comment on PR if tests fail
+        if: steps.rust_tests.outputs.exit_code != '0' || steps.frontend_tests.outputs.exit_code != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --body "## ❌ Test Failures Detected
+
+          One or more tests failed. **This PR cannot be merged until all tests pass.**
+
+          ### Failure Summary
+          $(if [ "${{ steps.rust_tests.outputs.exit_code }}" != "0" ]; then
+            echo "- **Rust Tests**: ❌ Failed"
+            echo "\`\`\`"
+            tail -20 src-tauri/test_output.txt || echo "See CI logs for details"
+            echo "\`\`\`"
+          else
+            echo "- **Rust Tests**: ✅ Passed"
+          fi)
+
+          $(if [ "${{ steps.frontend_tests.outputs.exit_code }}" != "0" ]; then
+            echo "- **Frontend Tests**: ❌ Failed"
+            echo "\`\`\`"
+            tail -20 test_output.txt || echo "See CI logs for details"
+            echo "\`\`\`"
+          else
+            echo "- **Frontend Tests**: ✅ Passed"
+          fi)
+
+          ### Required Actions
+          1. Review the test failures above
+          2. Fix the failing tests locally
+          3. Run \`cargo test\` and \`npm test\` to verify fixes
+          4. Push updated code to this PR
+          5. CI will re-run automatically
+
+          ### Debugging Tips
+          - View full logs: [CI Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          - Run tests locally with same environment
+          - Check for environment-specific issues
+
+          **Tests must pass before merge.**
+
+          ---
+          🤖 Automated test failure report"
+
+      - name: Fail workflow if tests fail
+        if: steps.rust_tests.outputs.exit_code != '0' || steps.frontend_tests.outputs.exit_code != '0'
+        run: |
+          echo "❌ Tests failed - blocking merge"
+          exit 1
