@@ -21,6 +21,9 @@ from db import get_db_manager, ContentCRUD, SourceCRUD, ScrapeJobCRUD, VectorSea
 # Import enrichment engine
 from enrichment import EnrichmentEngine
 
+# Import API routes
+from api.routes import export_router
+
 # Load environment variables
 load_dotenv()
 
@@ -54,6 +57,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include API routers
+app.include_router(export_router)
 
 
 # ============================================================================
@@ -314,6 +320,14 @@ async def root():
         "endpoints": {
             "enrich": "POST /api/enrich",
             "scrape": "POST /api/scrape",
+            "export": {
+                "formats": "GET /api/export/formats",
+                "bibtex": "GET /api/export/bibtex",
+                "csv": "GET /api/export/csv",
+                "json": "GET /api/export/json",
+                "endnote": "GET /api/export/endnote",
+                "ris": "GET /api/export/ris",
+            }
         }
     }
 
