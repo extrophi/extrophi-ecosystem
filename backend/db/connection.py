@@ -36,6 +36,17 @@ def get_session() -> Generator[Session, None, None]:
         db.close()
 
 
+def get_session_factory():
+    """
+    Get session factory for use in Celery tasks and other async operations.
+
+    Returns:
+        SQLAlchemy sessionmaker instance
+    """
+    engine = get_engine()
+    return sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
 def health_check() -> bool:
     """Check database connectivity"""
     try:

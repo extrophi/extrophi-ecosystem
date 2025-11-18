@@ -10,7 +10,7 @@ celery_app = Celery(
     "unified_scraper",
     broker=REDIS_URL,
     backend=REDIS_URL,
-    include=["backend.queue.tasks"],
+    include=["backend.queue.tasks", "backend.tasks.bulk_operations"],
 )
 
 celery_app.conf.update(
