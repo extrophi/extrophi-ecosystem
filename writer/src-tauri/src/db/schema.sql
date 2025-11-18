@@ -234,3 +234,34 @@ INSERT OR IGNORE INTO tags (name, color) VALUES
     ('meeting', '#F59E0B'),    -- amber-500
     ('idea', '#EC4899'),       -- pink-500
     ('todo', '#EF4444');       -- red-500
+
+-- V8: Cards for Card UI with Privacy & Publishing (Writer Module - GAMMA/BETA/ZETA)
+
+-- Cards table for the Card UI feature
+CREATE TABLE IF NOT EXISTS cards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content TEXT NOT NULL,
+    privacy_level TEXT CHECK(privacy_level IN (
+        'PRIVATE', 'PERSONAL', 'BUSINESS', 'IDEAS'
+    )),
+    published INTEGER DEFAULT 0,
+    git_sha TEXT,
+    category TEXT CHECK(category IN (
+        'UNASSIMILATED', 'PROGRAM', 'CATEGORIZED', 'GRIT', 'TOUGH', 'JUNK'
+    )),
+    session_id INTEGER,
+    message_id INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE SET NULL,
+    FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_cards_privacy_level ON cards(privacy_level);
+CREATE INDEX IF NOT EXISTS idx_cards_published ON cards(published);
+CREATE INDEX IF NOT EXISTS idx_cards_category ON cards(category);
+CREATE INDEX IF NOT EXISTS idx_cards_session ON cards(session_id);
+CREATE INDEX IF NOT EXISTS idx_cards_created ON cards(created_at DESC);
+
+-- Update schema version
+UPDATE metadata SET value = '8' WHERE key = 'schema_version';

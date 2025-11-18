@@ -3,9 +3,11 @@
 use rusqlite::{Connection, Result as SqliteResult};
 use std::path::PathBuf;
 
+pub mod migration;
 pub mod models;
 pub mod repository;
 
+pub use migration::{apply_migrations, get_schema_version};
 pub use models::*;
 pub use repository::Repository;
 
@@ -71,7 +73,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(version, "7");  // Updated schema version after migrations
+        assert_eq!(version, "8");  // Updated schema version after migrations
     }
 
     #[test]

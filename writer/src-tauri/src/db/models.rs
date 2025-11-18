@@ -197,3 +197,85 @@ pub struct BackupStatus {
     pub total_backup_size_bytes: i64,
     pub is_overdue: bool,
 }
+
+// ===== Cards (V8: Privacy & Publishing) =====
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Card {
+    pub id: Option<i64>,
+    pub content: String,
+    pub privacy_level: Option<PrivacyLevel>,
+    pub published: bool,
+    pub git_sha: Option<String>,
+    pub category: Option<CardCategory>,
+    pub session_id: Option<i64>,
+    pub message_id: Option<i64>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum PrivacyLevel {
+    Private,   // SSN, email, credit cards, PII
+    Personal,  // "I feel", family references
+    Business,  // client, project keywords
+    Ideas,     // Default publishable
+}
+
+impl PrivacyLevel {
+    pub fn as_str(&self) -> &str {
+        match self {
+            PrivacyLevel::Private => "PRIVATE",
+            PrivacyLevel::Personal => "PERSONAL",
+            PrivacyLevel::Business => "BUSINESS",
+            PrivacyLevel::Ideas => "IDEAS",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Result<Self, String> {
+        match s {
+            "PRIVATE" => Ok(PrivacyLevel::Private),
+            "PERSONAL" => Ok(PrivacyLevel::Personal),
+            "BUSINESS" => Ok(PrivacyLevel::Business),
+            "IDEAS" => Ok(PrivacyLevel::Ideas),
+            _ => Err(format!("Invalid privacy level: {}", s)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum CardCategory {
+    Unassimilated,  // New, not yet processed
+    Program,        // Structured content
+    Categorized,    // Organized
+    Grit,           // Important/challenging
+    Tough,          // Difficult content
+    Junk,           // To be deleted
+}
+
+impl CardCategory {
+    pub fn as_str(&self) -> &str {
+        match self {
+            CardCategory::Unassimilated => "UNASSIMILATED",
+            CardCategory::Program => "PROGRAM",
+            CardCategory::Categorized => "CATEGORIZED",
+            CardCategory::Grit => "GRIT",
+            CardCategory::Tough => "TOUGH",
+            CardCategory::Junk => "JUNK",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Result<Self, String> {
+        match s {
+            "UNASSIMILATED" => Ok(CardCategory::Unassimilated),
+            "PROGRAM" => Ok(CardCategory::Program),
+            "CATEGORIZED" => Ok(CardCategory::Categorized),
+            "GRIT" => Ok(CardCategory::Grit),
+            "TOUGH" => Ok(CardCategory::Tough),
+            "JUNK" => Ok(CardCategory::Junk),
+            _ => Err(format!("Invalid card category: {}", s)),
+        }
+    }
+}
