@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from backend.db.connection import get_session
 from backend.db.models import AttributionORM, CardORM, UserORM
 from backend.tokens.extropy import ExtropyTokenSystem
+from backend.webhooks.sender import WebhookSender
 
 router = APIRouter(prefix="/attributions", tags=["attributions"])
 
@@ -245,6 +246,30 @@ async def create_attribution(request: CreateAttributionRequest, db: Session = De
         # Commit transaction
         db.commit()
         db.refresh(attribution)
+
+        # Trigger webhook: card.cited (for the source card author)
+        webhook_sender = WebhookSender(db)
+        await webhook_sender.send_event(
+            event_type="card.cited",
+            user_id=source_author_id,
+            payload={
+                "attribution_id": str(attribution.id),
+                "attribution_type": attribution_type,
+                "source_card": {
+                    "card_id": str(source_card_id),
+                    "title": source_card.title,
+                },
+                "target_card": {
+                    "card_id": str(target_card_id),
+                    "title": target_card.title,
+                    "author_id": str(user_id),
+                },
+                "extropy_transferred": str(reward_amount),
+                "context": request.context,
+                "excerpt": request.excerpt,
+                "created_at": attribution.created_at.isoformat(),
+            },
+        )
 
         return AttributionResponse(
             attribution_id=str(attribution.id),

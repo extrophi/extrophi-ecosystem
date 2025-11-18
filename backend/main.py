@@ -12,6 +12,7 @@ from backend.api.routes import (
     query_router,
     scrape_router,
     tokens_router,
+    webhooks_router,
 )
 
 app = FastAPI(
@@ -31,6 +32,7 @@ app.include_router(api_keys_router)
 app.include_router(tokens_router)
 app.include_router(publish_router)
 app.include_router(attributions_router)
+app.include_router(webhooks_router)
 
 
 @app.get("/")
