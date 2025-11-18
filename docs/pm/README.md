@@ -1,76 +1,67 @@
 # Project Management Documentation
 
-This directory contains project management documents for orchestrating the IAC-032 Unified Scraper build.
+**Monorepo-level coordination and module-specific planning**
 
-## Audience
+## Structure
 
-**For**: Project manager (you), technical lead (Claude Desktop), execution team (Claude Code Web agents)
+### Monorepo-Level Coordination (Root)
+- **`ROOT-CCL-INSTRUCTIONS.md`** - Root PM lead coordination
+- **`MASTER-EXECUTION-PLAN.md`** - Overall strategy and timeline
+- **`QUICK-START-EXECUTE-NOW.md`** - Startup guide for all modules
+- **`CORRECTED-2-TIER-ARCHITECTURE.md`** - System architecture overview
+- **`TECHNICAL-PROPOSALS-SUMMARY.md`** - Executive summary of all proposals
 
-## Documents
+### Module-Specific Documentation (Subdirectories)
 
-### PRD_PROPER.md (SOURCE OF TRUTH)
-- **Purpose**: Authoritative product requirements document
-- **Architecture**: Tauri + Rust + Python multi-platform scraper
-- **Timeline**: 3-day sprint (Day 1-3 breakdown)
-- **Budget**: €900 expires in 3 days
-- **Stack**: FastAPI + PostgreSQL + pgvector + ScraperAPI.com
-- **Status**: ✅ Active, being executed
+#### Writer Module (`writer/`)
+BrainDump v3.0 - Privacy-first voice journaling desktop app
+- CCL execution instructions
+- Technical proposals
+- Module-specific planning
 
-### PRD_v2.md (DEPRECATED)
-- **Purpose**: Alternative RAG-focused design
-- **Architecture**: PyQt + SQLite + 2TB course library indexing
-- **Status**: ❌ Superseded by PRD_PROPER, kept for reference only
-- **Note**: Do NOT implement this version
+See also: `../../writer/docs/pm/` for additional Writer PM docs
 
-## Decision Log
+#### Research Module (`research/`)
+IAC-032 Unified Scraper - Multi-platform content intelligence engine
+- CCL execution instructions
+- Technical proposals
+- Scraping strategy
 
-### 2025-11-16: Technology Stack Finalized
-- **Database**: PostgreSQL + pgvector (chosen over SQLite for production readiness)
-- **Frontend**: Deferred to Week 2 (Tauri + Svelte)
-- **Testing**: API-only with cURL/Postman for 3-day MVP
-- **Platforms**: Twitter (IAC-024 reuse) + YouTube + Reddit (must-have Day 3)
-- **Scraping**: ScraperAPI.com primary ($49/mo), direct Playwright backup
+See also: `../../research/docs/pm/` for additional Research PM docs
 
-### 2025-11-16: Workflow Model Established
-- **Claude Desktop (this instance)**: Research → Document → Command
-- **Claude Code Web (execution team)**: Implement → Test → Deploy
-- **CI/CD**: GitHub Actions for automated testing and deployment
-- **Communication**: GitHub Issues for task assignment, CLAUDE.md for context
+#### Backend Module (`backend/`)
+IAC-011 Sovereign Backend - Shared FastAPI foundation
+- CCL execution instructions
+- Technical proposals
+- Backend architecture
 
-## Sprint Management
+See also: `../../backend/docs/pm/` for additional Backend PM docs
 
-### Day 1 (2025-11-16): Foundation + Research
-- [x] Initialize repository, create CLAUDE.md
-- [ ] Scrape ScraperAPI, Bright Data, Apify docs
-- [ ] Create comparison matrix
-- [ ] PostgreSQL schema design
-- [ ] IAC-024 code porting plan
+#### Orchestrator Module (`orchestrator/`)
+Admin dashboard and project coordination
+- CCL execution instructions
+- Technical proposals
+- Orchestration strategy
 
-### Day 2: Multi-Platform Implementation
-- [ ] YouTube scraper (youtube-transcript-api)
-- [ ] Reddit scraper (PRAW)
-- [ ] ChromaDB RAG integration
-- [ ] LLM analysis pipeline (OpenAI GPT-4)
+## About the 2-Tier CCL+CCW Model
 
-### Day 3: Intelligence & Export
-- [ ] Authority detection algorithm
-- [ ] Content gap analysis
-- [ ] Course script generator
-- [ ] Multi-format export (markdown, tweets, scripts)
+This documentation implements a **2-tier execution system**:
+- **CCL (Claude Code Local)**: Development lead instances running locally
+- **CCW (Claude Code Web)**: Execution team instances running via web
 
-## Communication Protocol
+Each module has:
+1. **CCL-INSTRUCTIONS-{MODULE}.md** - Instructions for the development lead
+2. **TECHNICAL-PROPOSAL-{MODULE}.md** - Detailed technical specifications
 
-### For Claude Code Web Agents
-1. Check GitHub Issues for assigned tasks
-2. Read CLAUDE.md for project context
-3. Reference PRD_PROPER.md for requirements
-4. Execute, commit with descriptive messages
-5. Update issue status on completion
+## Navigation
 
-### For Project Manager
-- **docs/pm/**: Strategic decisions, sprint planning
-- **GitHub Issues**: Task tracking, agent assignments
-- **CLAUDE.md**: Living documentation, research synthesis
-- **Pull Requests**: Code review, quality gates
+- **Root PM Docs**: Current directory
+- **Writer PM**: `writer/` or `../../writer/docs/pm/`
+- **Research PM**: `research/` or `../../research/docs/pm/`
+- **Backend PM**: `backend/` or `../../backend/docs/pm/`
+- **Orchestrator PM**: `orchestrator/`
 
-**Last updated**: 2025-11-16
+---
+
+**Last Updated**: 2025-11-18
+**Archive**: Previous PM docs archived to `../archive/2025-11-18_021849/pm/`

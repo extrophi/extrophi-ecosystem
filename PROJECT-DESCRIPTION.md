@@ -1,0 +1,3 @@
+# Extrophi Ecosystem
+
+Privacy-first creator platform combining local-first writing tools with cloud research infrastructure. Four integrated modules: Writer (Vim-based Tauri app with privacy linter), Research (multi-platform content scraper with vector search), Backend (PostgreSQL with $EXTROPY token system), and Orchestrator (service coordination). Built on Unix fundamentals, designed for warriors not users. Graft not grift.
