@@ -504,6 +504,118 @@ pub async fn get_prompt_template(
     db.get_prompt_template_by_name(&name)
         .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))
 }
+
+// ============================================================================
+// Card Template Commands (V9: Template System)
+// ============================================================================
+
+use braindump::db::models::CardTemplate;
+
+#[tauri::command]
+pub async fn list_card_templates(
+    state: State<'_, AppState>,
+) -> Result<Vec<CardTemplate>, BrainDumpError> {
+    let db = state.db.lock();
+
+    db.list_card_templates()
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))
+}
+
+#[tauri::command]
+pub async fn get_card_template(
+    state: State<'_, AppState>,
+    id: i64,
+) -> Result<CardTemplate, BrainDumpError> {
+    let db = state.db.lock();
+
+    db.get_card_template(id)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))
+}
+
+#[tauri::command]
+pub async fn get_card_template_by_name(
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<CardTemplate, BrainDumpError> {
+    let db = state.db.lock();
+
+    db.get_card_template_by_name(&name)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))
+}
+
+#[tauri::command]
+pub async fn create_card_template(
+    state: State<'_, AppState>,
+    name: String,
+    title: String,
+    content: String,
+    category: Option<String>,
+) -> Result<i64, BrainDumpError> {
+    use braindump::db::models::CardCategory;
+    use chrono::Utc;
+
+    let db = state.db.lock();
+
+    let template = CardTemplate {
+        id: None,
+        name,
+        title,
+        content,
+        category: category.and_then(|c| CardCategory::from_str(&c).ok()),
+        is_system: false,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+    };
+
+    db.create_card_template(&template)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::WriteFailed(e.to_string())))
+}
+
+#[tauri::command]
+pub async fn update_card_template(
+    state: State<'_, AppState>,
+    id: i64,
+    name: String,
+    title: String,
+    content: String,
+    category: Option<String>,
+) -> Result<(), BrainDumpError> {
+    use braindump::db::models::CardCategory;
+    use chrono::Utc;
+
+    let db = state.db.lock();
+
+    // Get existing template to preserve metadata
+    let mut template = db
+        .get_card_template(id)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+
+    // Update fields
+    template.name = name;
+    template.title = title;
+    template.content = content;
+    template.category = category.and_then(|c| CardCategory::from_str(&c).ok());
+    template.updated_at = Utc::now();
+
+    db.update_card_template(&template)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::WriteFailed(e.to_string())))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn delete_card_template(
+    state: State<'_, AppState>,
+    id: i64,
+) -> Result<(), BrainDumpError> {
+    let db = state.db.lock();
+
+    db.delete_card_template(id)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::WriteFailed(e.to_string())))?;
+
+    Ok(())
+}
+
 // ============================================================================
 // Claude API Commands
 // ============================================================================

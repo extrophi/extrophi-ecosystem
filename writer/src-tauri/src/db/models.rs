@@ -214,6 +214,20 @@ pub struct Card {
     pub updated_at: DateTime<Utc>,
 }
 
+// ===== Card Templates (V9: Template System) =====
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CardTemplate {
+    pub id: Option<i64>,
+    pub name: String,
+    pub title: String,
+    pub content: String,
+    pub category: Option<CardCategory>,
+    pub is_system: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum PrivacyLevel {

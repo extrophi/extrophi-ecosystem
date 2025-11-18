@@ -1325,6 +1325,344 @@ impl Repository {
 
         cards.collect()
     }
+
+    // ===== Card Templates (V9: Template System) =====
+
+    /// List all card templates
+    pub fn list_card_templates(&self) -> SqliteResult<Vec<CardTemplate>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, title, content, category, is_system, created_at, updated_at
+             FROM card_templates ORDER BY is_system DESC, name ASC",
+        )?;
+
+        let templates = stmt.query_map([], |row| {
+            let category_str: Option<String> = row.get(4)?;
+
+            Ok(CardTemplate {
+                id: Some(row.get(0)?),
+                name: row.get(1)?,
+                title: row.get(2)?,
+                content: row.get(3)?,
+                category: category_str.and_then(|s| CardCategory::from_str(&s).ok()),
+                is_system: row.get::<_, i64>(5)? != 0,
+                created_at: row.get::<_, String>(6)?.parse().unwrap_or(Utc::now()),
+                updated_at: row.get::<_, String>(7)?.parse().unwrap_or(Utc::now()),
+            })
+        })?;
+
+        templates.collect()
+    }
+
+    /// Get a card template by ID
+    pub fn get_card_template(&self, id: i64) -> SqliteResult<CardTemplate> {
+        self.conn.query_row(
+            "SELECT id, name, title, content, category, is_system, created_at, updated_at
+             FROM card_templates WHERE id = ?1",
+            params![id],
+            |row| {
+                let category_str: Option<String> = row.get(4)?;
+
+                Ok(CardTemplate {
+                    id: Some(row.get(0)?),
+                    name: row.get(1)?,
+                    title: row.get(2)?,
+                    content: row.get(3)?,
+                    category: category_str.and_then(|s| CardCategory::from_str(&s).ok()),
+                    is_system: row.get::<_, i64>(5)? != 0,
+                    created_at: row.get::<_, String>(6)?.parse().unwrap_or(Utc::now()),
+                    updated_at: row.get::<_, String>(7)?.parse().unwrap_or(Utc::now()),
+                })
+            },
+        )
+    }
+
+    /// Get a card template by name
+    pub fn get_card_template_by_name(&self, name: &str) -> SqliteResult<CardTemplate> {
+        self.conn.query_row(
+            "SELECT id, name, title, content, category, is_system, created_at, updated_at
+             FROM card_templates WHERE name = ?1",
+            params![name],
+            |row| {
+                let category_str: Option<String> = row.get(4)?;
+
+                Ok(CardTemplate {
+                    id: Some(row.get(0)?),
+                    name: row.get(1)?,
+                    title: row.get(2)?,
+                    content: row.get(3)?,
+                    category: category_str.and_then(|s| CardCategory::from_str(&s).ok()),
+                    is_system: row.get::<_, i64>(5)? != 0,
+                    created_at: row.get::<_, String>(6)?.parse().unwrap_or(Utc::now()),
+                    updated_at: row.get::<_, String>(7)?.parse().unwrap_or(Utc::now()),
+                })
+            },
+        )
+    }
+
+    /// Create a new card template
+    pub fn create_card_template(&self, template: &CardTemplate) -> SqliteResult<i64> {
+        self.conn.execute(
+            "INSERT INTO card_templates (name, title, content, category, is_system, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                template.name,
+                template.title,
+                template.content,
+                template.category.as_ref().map(|c| c.as_str()),
+                template.is_system as i64,
+                template.created_at.to_rfc3339(),
+                template.updated_at.to_rfc3339(),
+            ],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Update a card template
+    pub fn update_card_template(&self, template: &CardTemplate) -> SqliteResult<usize> {
+        let id = template
+            .id
+            .ok_or_else(|| rusqlite::Error::InvalidParameterName("Template ID is required".to_string()))?;
+
+        // Check if template is a system template
+        let is_system: i64 = self.conn.query_row(
+            "SELECT is_system FROM card_templates WHERE id = ?1",
+            params![id],
+            |row| row.get(0),
+        )?;
+
+        if is_system != 0 {
+            return Err(rusqlite::Error::InvalidParameterName(
+                "Cannot modify system templates".to_string(),
+            ));
+        }
+
+        self.conn.execute(
+            "UPDATE card_templates
+             SET name = ?1, title = ?2, content = ?3, category = ?4, updated_at = ?5
+             WHERE id = ?6",
+            params![
+                template.name,
+                template.title,
+                template.content,
+                template.category.as_ref().map(|c| c.as_str()),
+                Utc::now().to_rfc3339(),
+                id,
+            ],
+        )
+    }
+
+    /// Delete a card template
+    pub fn delete_card_template(&self, id: i64) -> SqliteResult<usize> {
+        // Check if template is a system template
+        let is_system: i64 = self.conn.query_row(
+            "SELECT is_system FROM card_templates WHERE id = ?1",
+            params![id],
+            |row| row.get(0),
+        )?;
+
+        if is_system != 0 {
+            return Err(rusqlite::Error::InvalidParameterName(
+                "Cannot delete system templates".to_string(),
+            ));
+        }
+
+        self.conn
+            .execute("DELETE FROM card_templates WHERE id = ?1", params![id])
+    }
+
+    /// Initialize predefined system templates
+    pub fn initialize_system_templates(&self) -> SqliteResult<()> {
+        let now = Utc::now();
+
+        let templates = vec![
+            CardTemplate {
+                id: None,
+                name: "daily_journal".to_string(),
+                title: "Daily Journal".to_string(),
+                content: r#"# Daily Journal - {{date}}
+
+## What happened today?
+
+
+## Key insights
+
+
+## Gratitude
+-
+
+## Tomorrow's focus
+- "#.to_string(),
+                category: Some(CardCategory::Categorized),
+                is_system: true,
+                created_at: now,
+                updated_at: now,
+            },
+            CardTemplate {
+                id: None,
+                name: "meeting_notes".to_string(),
+                title: "Meeting Notes".to_string(),
+                content: r#"# Meeting Notes - {{datetime}}
+
+**Attendees:**
+
+**Agenda:**
+-
+
+**Discussion:**
+
+
+**Action Items:**
+- [ ]
+
+**Next Meeting:** "#.to_string(),
+                category: Some(CardCategory::Program),
+                is_system: true,
+                created_at: now,
+                updated_at: now,
+            },
+            CardTemplate {
+                id: None,
+                name: "idea".to_string(),
+                title: "Idea".to_string(),
+                content: r#"# Idea - {{date}}
+
+## Core Concept
+
+
+## Why This Matters
+
+
+## Next Steps
+- [ ]
+
+---
+*Captured by {{user}}*"#.to_string(),
+                category: Some(CardCategory::Unassimilated),
+                is_system: true,
+                created_at: now,
+                updated_at: now,
+            },
+            CardTemplate {
+                id: None,
+                name: "grit".to_string(),
+                title: "GRIT Challenge".to_string(),
+                content: r#"# Challenge - {{date}}
+
+## The Challenge
+
+
+## Why It's Hard
+
+
+## My Strategy
+1.
+
+## Progress Tracking
+- [ ] Step 1
+- [ ] Step 2
+- [ ] Step 3
+
+## Reflection
+
+
+---
+**Remember:** Growth happens outside your comfort zone."#.to_string(),
+                category: Some(CardCategory::Grit),
+                is_system: true,
+                created_at: now,
+                updated_at: now,
+            },
+            CardTemplate {
+                id: None,
+                name: "quick_note".to_string(),
+                title: "Quick Note".to_string(),
+                content: "{{datetime}}\n\n".to_string(),
+                category: None,
+                is_system: true,
+                created_at: now,
+                updated_at: now,
+            },
+            CardTemplate {
+                id: None,
+                name: "weekly_review".to_string(),
+                title: "Weekly Review".to_string(),
+                content: r#"# Weekly Review - Week of {{date}}
+
+## Wins This Week
+-
+
+## Challenges Faced
+-
+
+## Lessons Learned
+
+
+## Focus for Next Week
+- [ ]
+- [ ]
+- [ ]
+
+## Energy & Well-being
+Mood:
+Energy:
+Sleep: "#.to_string(),
+                category: Some(CardCategory::Categorized),
+                is_system: true,
+                created_at: now,
+                updated_at: now,
+            },
+            CardTemplate {
+                id: None,
+                name: "project_planning".to_string(),
+                title: "Project Planning".to_string(),
+                content: r#"# Project:
+
+**Start Date:** {{date}}
+**Target Completion:**
+
+## Objective
+
+
+## Scope
+**In Scope:**
+-
+
+**Out of Scope:**
+-
+
+## Milestones
+- [ ] Milestone 1
+- [ ] Milestone 2
+- [ ] Milestone 3
+
+## Resources Needed
+
+
+## Risks & Mitigation
+"#.to_string(),
+                category: Some(CardCategory::Program),
+                is_system: true,
+                created_at: now,
+                updated_at: now,
+            },
+        ];
+
+        // Insert templates if they don't already exist
+        for template in templates {
+            // Check if template already exists
+            let exists: i64 = self.conn.query_row(
+                "SELECT COUNT(*) FROM card_templates WHERE name = ?1",
+                params![template.name],
+                |row| row.get(0),
+            )?;
+
+            if exists == 0 {
+                self.create_card_template(&template)?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

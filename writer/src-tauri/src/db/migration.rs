@@ -23,6 +23,9 @@ pub fn apply_migrations(conn: &Connection) -> SqliteResult<()> {
     if current_version < 8 {
         migrate_to_v8(conn)?;
     }
+    if current_version < 9 {
+        migrate_to_v9(conn)?;
+    }
 
     Ok(())
 }
@@ -69,6 +72,39 @@ fn migrate_to_v8(conn: &Connection) -> SqliteResult<()> {
     Ok(())
 }
 
+/// Migration from V8 to V9: Add card_templates table for template system
+fn migrate_to_v9(conn: &Connection) -> SqliteResult<()> {
+    println!("Migrating database from V8 to V9 (adding card templates)...");
+
+    // Create card_templates table
+    conn.execute_batch(
+        "
+        -- V9: Card Templates for quick card creation
+        CREATE TABLE IF NOT EXISTS card_templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            category TEXT CHECK(category IN (
+                'UNASSIMILATED', 'PROGRAM', 'CATEGORIZED', 'GRIT', 'TOUGH', 'JUNK'
+            )),
+            is_system INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_templates_name ON card_templates(name);
+        CREATE INDEX IF NOT EXISTS idx_templates_system ON card_templates(is_system);
+
+        -- Update schema version
+        UPDATE metadata SET value = '9' WHERE key = 'schema_version';
+        ",
+    )?;
+
+    println!("Migration to V9 completed successfully");
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -78,7 +114,7 @@ mod tests {
     fn test_get_schema_version() {
         let conn = initialize_db(":memory:".into()).unwrap();
         let version = get_schema_version(&conn).unwrap();
-        assert_eq!(version, 8);
+        assert_eq!(version, 9);
     }
 
     #[test]
@@ -206,6 +242,6 @@ mod tests {
 
         // Verify final version
         let version = get_schema_version(&conn).unwrap();
-        assert_eq!(version, 8);
+        assert_eq!(version, 9);
     }
 }
