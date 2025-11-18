@@ -19,6 +19,8 @@ pub enum BrainDumpError {
     OpenAiApi(OpenAiApiError),
     /// Prompt template errors
     Prompt(PromptError),
+    /// Git publish errors
+    Git(GitError),
     /// File I/O errors (serialized as string)
     Io(String),
     /// Generic errors with context
@@ -145,6 +147,23 @@ pub enum PromptError {
     InvalidTemplate(String),
 }
 
+/// Git publish errors
+#[derive(Debug, Serialize)]
+pub enum GitError {
+    /// Git operation failed
+    GitOperationFailed(String),
+    /// Repository not found
+    RepositoryNotFound(String),
+    /// No publishable cards found
+    NoPublishableCards,
+    /// IO error
+    IoError(String),
+    /// Git library error
+    Git2Error(String),
+    /// Database error
+    DatabaseError(String),
+}
+
 // Implement Display trait for user-facing messages
 impl fmt::Display for BrainDumpError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -155,6 +174,7 @@ impl fmt::Display for BrainDumpError {
             BrainDumpError::ClaudeApi(e) => write!(f, "Claude API Error: {}", e),
             BrainDumpError::OpenAiApi(e) => write!(f, "OpenAI API Error: {}", e),
             BrainDumpError::Prompt(e) => write!(f, "Prompt Error: {}", e),
+            BrainDumpError::Git(e) => write!(f, "Git Error: {}", e),
             BrainDumpError::Io(e) => write!(f, "File Error: {}", e),
             BrainDumpError::Other(msg) => write!(f, "{}", msg),
         }
@@ -381,6 +401,31 @@ impl fmt::Display for PromptError {
     }
 }
 
+impl fmt::Display for GitError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            GitError::GitOperationFailed(msg) => {
+                write!(f, "Git operation failed: {}", msg)
+            }
+            GitError::RepositoryNotFound(path) => {
+                write!(f, "Git repository not found at: {}", path)
+            }
+            GitError::NoPublishableCards => {
+                write!(f, "No publishable cards found. Only BUSINESS and IDEAS cards can be published")
+            }
+            GitError::IoError(msg) => {
+                write!(f, "File error: {}", msg)
+            }
+            GitError::Git2Error(msg) => {
+                write!(f, "Git error: {}", msg)
+            }
+            GitError::DatabaseError(msg) => {
+                write!(f, "Database error: {}", msg)
+            }
+        }
+    }
+}
+
 // Implement std::error::Error trait
 impl std::error::Error for BrainDumpError {}
 impl std::error::Error for AudioError {}
@@ -389,6 +434,7 @@ impl std::error::Error for TranscriptionError {}
 impl std::error::Error for ClaudeApiError {}
 impl std::error::Error for OpenAiApiError {}
 impl std::error::Error for PromptError {}
+impl std::error::Error for GitError {}
 
 // Conversions from specific errors to BrainDumpError
 impl From<AudioError> for BrainDumpError {
@@ -424,6 +470,12 @@ impl From<OpenAiApiError> for BrainDumpError {
 impl From<PromptError> for BrainDumpError {
     fn from(err: PromptError) -> Self {
         BrainDumpError::Prompt(err)
+    }
+}
+
+impl From<GitError> for BrainDumpError {
+    fn from(err: GitError) -> Self {
+        BrainDumpError::Git(err)
     }
 }
 

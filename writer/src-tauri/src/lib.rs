@@ -13,6 +13,7 @@ pub mod backup;
 pub mod db;
 pub mod error;
 pub mod export;
+pub mod git;
 pub mod logging;
 pub mod plugin;
 pub mod prompts;
@@ -21,8 +22,10 @@ pub mod services;
 pub use audio::{Recorder, RecorderError, RecorderResult, WavWriter};
 pub use db::{initialize_db, models, repository, Recording, Repository, Segment, Transcript};
 pub use error::{
-    AudioError, BrainDumpError, ClaudeApiError, DatabaseError, OpenAiApiError, TranscriptionError,
+    AudioError, BrainDumpError, ClaudeApiError, DatabaseError, GitError, OpenAiApiError,
+    TranscriptionError,
 };
+pub use git::{GitPublisher, PublishResult, PublishStatus};
 pub use plugin::{
     AudioData, PluginError, Transcript as PluginTranscript, TranscriptSegment, TranscriptionPlugin,
 };
