@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from pgvector.sqlalchemy import Vector
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, DateTime, Index, String, Text
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -171,6 +171,61 @@ class ResearchSessionORM(Base):
         return f"<ResearchSessionORM(id={self.id}, name={self.session_name})>"
 
 
+class APIKeyORM(Base):
+    """ORM model for API keys with rate limiting"""
+
+    __tablename__ = "api_keys"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+
+    # Key identification
+    key_name = Column(String(255), nullable=False)
+    key_prefix = Column(String(20), nullable=False)  # First 8-12 chars for identification
+    key_hash = Column(String(255), nullable=False, unique=True)  # SHA-256 hash
+
+    # Status
+    is_active = Column(Boolean, nullable=False, default=True)
+    is_revoked = Column(Boolean, nullable=False, default=False)
+
+    # Rate limiting (1000 requests per hour by default)
+    rate_limit_requests = Column(Integer, nullable=False, default=1000)
+    rate_limit_window_seconds = Column(Integer, nullable=False, default=3600)  # 1 hour
+    current_usage_count = Column(Integer, nullable=False, default=0)
+    rate_limit_window_start = Column(DateTime, nullable=True)
+
+    # Usage tracking
+    last_used_at = Column(DateTime, nullable=True)
+    request_count = Column(BigInteger, nullable=False, default=0)  # Total requests all time
+
+    # Expiration
+    expires_at = Column(DateTime, nullable=True)
+
+    # Metadata
+    metadata = Column(JSONB, nullable=True, default={})
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    revoked_at = Column(DateTime, nullable=True)
+
+    # Indices
+    __table_args__ = (
+        Index("idx_api_keys_user_id", "user_id"),
+        Index("idx_api_keys_key_hash", "key_hash"),
+        Index("idx_api_keys_key_prefix", "key_prefix"),
+        Index("idx_api_keys_is_active", "is_active"),
+        Index("idx_api_keys_is_revoked", "is_revoked"),
+        Index("idx_api_keys_user_active", "user_id", "is_active"),
+        Index("idx_api_keys_created_at", "created_at"),
+        Index("idx_api_keys_last_used_at", "last_used_at"),
+        Index("idx_api_keys_expires_at", "expires_at"),
+    )
+
+    def __repr__(self):
+        return f"<APIKeyORM(id={self.id}, key_name={self.key_name}, user_id={self.user_id})>"
+
+
 # ============================================================================
 # Pydantic v2 Schemas
 # ============================================================================
@@ -291,3 +346,101 @@ class ResearchSessionModel(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class APIKeyModel(BaseModel):
+    """Model for API key (without sensitive data)"""
+
+    id: str
+    user_id: str
+    key_name: str
+    key_prefix: str
+    is_active: bool
+    is_revoked: bool
+    rate_limit_requests: int
+    rate_limit_window_seconds: int
+    current_usage_count: int
+    last_used_at: Optional[datetime] = None
+    request_count: int
+    expires_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+    revoked_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class APIKeyCreateRequest(BaseModel):
+    """Request model for creating a new API key"""
+
+    key_name: str = Field(..., min_length=1, max_length=255, description="User-friendly name for the key")
+    expires_in_days: Optional[int] = Field(None, gt=0, description="Optional expiration in days")
+    rate_limit_requests: Optional[int] = Field(1000, gt=0, description="Requests per hour (default: 1000)")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "key_name": "Production API",
+                "expires_in_days": 365,
+                "rate_limit_requests": 1000,
+            }
+        }
+
+
+class APIKeyCreateResponse(BaseModel):
+    """Response model when creating a new API key"""
+
+    id: str
+    key_name: str
+    api_key: str = Field(..., description="Full API key - shown only once, never stored in plaintext")
+    key_prefix: str
+    expires_at: Optional[datetime] = None
+    rate_limit_requests: int
+    created_at: datetime
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "id": "550e8400-e29b-41d4-a716-446655440000",
+                "key_name": "Production API",
+                "api_key": "extro_live_abc123def456ghi789jkl012mno345pqr678stu901vwx234yz567",
+                "key_prefix": "extro_live_abc",
+                "expires_at": "2026-11-18T12:00:00Z",
+                "rate_limit_requests": 1000,
+                "created_at": "2025-11-18T12:00:00Z",
+            }
+        }
+
+
+class APIKeyListResponse(BaseModel):
+    """Response model for listing API keys"""
+
+    keys: List[APIKeyModel]
+    total: int
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "keys": [
+                    {
+                        "id": "550e8400-e29b-41d4-a716-446655440000",
+                        "user_id": "660f9511-f39c-52e5-b827-557766551111",
+                        "key_name": "Production API",
+                        "key_prefix": "sk_live_abc123",
+                        "is_active": True,
+                        "is_revoked": False,
+                        "rate_limit_requests": 1000,
+                        "rate_limit_window_seconds": 3600,
+                        "current_usage_count": 245,
+                        "last_used_at": "2025-11-18T12:00:00Z",
+                        "request_count": 15234,
+                        "expires_at": None,
+                        "created_at": "2025-11-18T12:00:00Z",
+                        "updated_at": "2025-11-18T12:00:00Z",
+                        "revoked_at": None,
+                    }
+                ],
+                "total": 1,
+            }
+        }
