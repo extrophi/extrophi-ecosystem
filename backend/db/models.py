@@ -7,7 +7,7 @@ from uuid import uuid4, UUID as PyUUID
 
 from pgvector.sqlalchemy import Vector
 from pydantic import BaseModel, Field
-from sqlalchemy import DECIMAL, BigInteger, Boolean, Column, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import DECIMAL, BigInteger, Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -202,8 +202,8 @@ class APIKeyORM(Base):
     # Expiration
     expires_at = Column(DateTime, nullable=True)
 
-    # Metadata
-    metadata = Column(JSONB, nullable=True, default={})
+    # Metadata (using extra_metadata to avoid reserved keyword)
+    extra_metadata = Column(JSONB, nullable=True, default={})
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -245,8 +245,8 @@ class UserORM(Base):
     # API authentication
     api_key_hash = Column(String(255), nullable=True)
 
-    # Metadata
-    metadata = Column(JSONB, nullable=True, default={})
+    # Metadata (using extra_metadata to avoid reserved keyword)
+    extra_metadata = Column(JSONB, nullable=True, default={})
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -306,8 +306,8 @@ class CardORM(Base):
     is_published = Column(Boolean, default=False)
     published_url = Column(Text, nullable=True)
 
-    # Metadata
-    metadata = Column(JSONB, nullable=True, default={})
+    # Metadata (using extra_metadata to avoid reserved keyword)
+    extra_metadata = Column(JSONB, nullable=True, default={})
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -363,8 +363,8 @@ class ExtropyLedgerORM(Base):
     # Description
     description = Column(Text, nullable=True)
 
-    # Metadata
-    metadata = Column(JSONB, nullable=True, default={})
+    # Metadata (using extra_metadata to avoid reserved keyword)
+    extra_metadata = Column(JSONB, nullable=True, default={})
 
     # Timestamp (immutable - no updates allowed)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -410,8 +410,8 @@ class AttributionORM(Base):
     # $EXTROPY transfer on attribution
     extropy_transferred = Column(DECIMAL(20, 8), default=Decimal("0.00000000"))
 
-    # Metadata
-    metadata = Column(JSONB, nullable=True, default={})
+    # Metadata (using extra_metadata to avoid reserved keyword)
+    extra_metadata = Column(JSONB, nullable=True, default={})
 
     # Timestamp
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -628,6 +628,76 @@ class AttributionModel(BaseModel):
     extropy_transferred: Decimal = Decimal("0.00000000")
     metadata: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Config:
+        from_attributes = True
+
+
+class APIKeyModel(BaseModel):
+    """Pydantic model for API keys"""
+
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    user_id: str
+    key_name: str
+    key_prefix: str
+    is_active: bool = True
+    is_revoked: bool = False
+    rate_limit_requests: int = 1000
+    rate_limit_window_seconds: int = 3600
+    current_usage_count: int = 0
+    rate_limit_window_start: Optional[datetime] = None
+    last_used_at: Optional[datetime] = None
+    request_count: int = 0
+    expires_at: Optional[datetime] = None
+    extra_metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    revoked_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class APIKeyCreateRequest(BaseModel):
+    """Request model for creating a new API key"""
+
+    key_name: str = Field(..., min_length=1, max_length=255, description="Name for the API key")
+    expires_in_days: Optional[int] = Field(None, ge=1, le=365, description="Days until expiration")
+    rate_limit_requests: int = Field(1000, ge=1, description="Requests per window")
+    rate_limit_window_seconds: int = Field(3600, ge=60, description="Rate limit window in seconds")
+
+
+class APIKeyCreateResponse(BaseModel):
+    """Response model after creating an API key"""
+
+    id: str
+    key_name: str
+    api_key: str = Field(..., description="Full API key (only shown once)")
+    key_prefix: str
+    rate_limit_requests: int
+    rate_limit_window_seconds: int
+    expires_at: Optional[datetime]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class APIKeyListResponse(BaseModel):
+    """Response model for listing API keys"""
+
+    id: str
+    key_name: str
+    key_prefix: str
+    is_active: bool
+    is_revoked: bool
+    rate_limit_requests: int
+    rate_limit_window_seconds: int
+    last_used_at: Optional[datetime]
+    request_count: int
+    expires_at: Optional[datetime]
+    created_at: datetime
+    revoked_at: Optional[datetime]
 
     class Config:
         from_attributes = True
