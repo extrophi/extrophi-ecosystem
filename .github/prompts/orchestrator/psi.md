@@ -1,159 +1,74 @@
-## Agent: PSI (Orchestrator Module)
-**Duration:** 2 hours
-**Branch:** `orchestrator`
-**Dependencies:** ALL Wave 2 agents complete (GAMMA, EPSILON, ZETA, LAMBDA, MU, RHO, PI, SIGMA, TAU)
+# IAC-033 Extrophi Ecosystem - PSI Agent
+## Integration Tests for All Modules
 
-### ⚠️ CRITICAL: WAIT FOR COMPLETION
-**PSI CANNOT START until Writer, Research, and Backend modules ALL report completion.**
+See full prompt in issue #71
 
-Check GitHub issues - only proceed when issues #50-#58 are all closed.
+**Repository**: https://github.com/extrophi/extrophi-ecosystem  
+**Branch**: `claude/integration-tests-psi`  
+**Issue**: Closes #71  
+**Duration**: 2 hours
 
-### Task
-Build integration tests that verify all 3 modules work together
+## Quick Start
 
-### Technical Reference
-- `/docs/pm/orchestrator/TECHNICAL-PROPOSAL-ORCHESTRATOR.md`
+```bash
+# Create branch
+git checkout -b claude/integration-tests-psi
 
-### Deliverables
-- `orchestrator/tests/test_integration.py`
-- End-to-end workflow tests
-- API contract validation
-- Database schema compatibility
-- Error handling tests
+# Create test directory
+mkdir -p tests/integration
 
-### Integration Flows to Test
+# Install test dependencies
+pip install pytest pytest-asyncio pytest-cov httpx
 
-**Flow 1: Writer → Research (Enrichment)**
-```python
-async def test_enrichment_flow():
-    # 1. Writer creates card
-    card = {"content": "How to build focus...", "category": "PROGRAM"}
-
-    # 2. Writer calls Research enrichment
-    response = await http.post("http://localhost:8001/api/enrich", json=card)
-
-    # 3. Verify suggestions returned
-    assert response.status_code == 200
-    assert "suggestions" in response.json()
-    assert len(response.json()["suggestions"]) > 0
+# Run tests
+pytest tests/integration/ -v
 ```
 
-**Flow 2: Writer → Backend (Publish)**
-```python
-async def test_publish_flow():
-    # 1. Writer publishes cards
-    cards = [
-        {"content": "Card 1", "privacy_level": "BUSINESS"},
-        {"content": "Card 2", "privacy_level": "IDEAS"}
-    ]
+## Mission
+Create 5 comprehensive integration test suites covering all Wave 2 functionality.
 
-    # 2. Call Backend publish
-    response = await http.post(
-        "http://localhost:8002/api/publish",
-        json={"cards": cards, "user_id": "test_user"},
-        headers={"Authorization": "Bearer test_api_key"}
-    )
+## Test Files to Create
+1. `tests/integration/test_user_journey.py` - Full Writer→Research→Attribution flow
+2. `tests/integration/test_attribution_flow.py` - $EXTROPY token rewards
+3. `tests/integration/test_privacy_integration.py` - Privacy enforcement
+4. `tests/integration/test_rag_pipeline.py` - LAMBDA→MU→OpenAI semantic search
+5. `tests/integration/test_api_auth_flow.py` - RHO authentication + rate limiting
+6. `tests/integration/conftest.py` - Shared fixtures
+7. `.github/workflows/integration-tests.yml` - CI workflow
+8. `tests/integration/README.md` - Documentation
 
-    # 3. Verify URLs returned and $EXTROPY awarded
-    assert response.status_code == 200
-    result = response.json()
-    assert len(result["published_urls"]) == 2
-    assert result["extropy_earned"] == 2.0  # 1 per card
-```
+## Key Test Scenarios
 
-**Flow 3: Backend Attribution → $EXTROPY Transfer**
-```python
-async def test_attribution_flow():
-    # 1. User A publishes card
-    card_a = await publish_card("user_a", "Original idea")
+### User Journey
+- Create user → API key → Publish card → Generate embeddings → Semantic search → Citation → $EXTROPY reward
 
-    # 2. User B cites card_a
-    response = await http.post(
-        "http://localhost:8002/api/attributions",
-        json={
-            "source_card_id": card_a["id"],
-            "target_card_id": "card_b",
-            "attribution_type": "citation",
-            "user_id": "user_b"
-        }
-    )
+### Attribution
+- Citation: 0.1 $EXTROPY
+- Remix: 0.5 $EXTROPY
+- Reply: 0.05 $EXTROPY
+- Concurrent citations (race condition test)
 
-    # 3. Verify $EXTROPY transferred (0.1 for citation)
-    assert response.json()["extropy_transferred"] == 0.1
+### Privacy
+- PRIVATE cards BLOCKED from publish
+- PERSONAL cards BLOCKED
+- BUSINESS cards ALLOWED
+- IDEAS cards ALLOWED
 
-    # 4. Check user_a balance increased
-    balance = await get_balance("user_a")
-    assert balance == 1.1  # 1.0 from publish + 0.1 from citation
-```
+### RAG Pipeline
+- Publish cards → LAMBDA embeddings → MU semantic search → OpenAI insights
 
-**Flow 4: Health Monitoring**
-```python
-async def test_health_monitoring():
-    # Check all services healthy
-    services = ["writer", "research", "backend", "orchestrator"]
+### API Auth
+- Rate limiting (10 req/min test)
+- Invalid key rejection
+- Revoked key blocking
+- Expired key blocking
 
-    for service in services:
-        port = get_port(service)
-        response = await http.get(f"http://localhost:{port}/health")
-        assert response.status_code == 200
-        assert response.json()["status"] == "healthy"
-```
+## Success Criteria
+- ✅ 25+ integration tests passing
+- ✅ 90%+ coverage
+- ✅ <5 minute runtime
+- ✅ Mock external APIs
+- ✅ Atomic transactions validated
+- ✅ Concurrent request testing
 
-### Database Integration Test
-```python
-async def test_database_compatibility():
-    # Verify Research and Backend share PostgreSQL schema
-    # Check that cards table exists and has correct columns
-
-    async with asyncpg.connect("postgresql://...") as conn:
-        # Check cards table
-        result = await conn.fetch(
-            "SELECT column_name FROM information_schema.columns "
-            "WHERE table_name = 'cards'"
-        )
-        columns = [r["column_name"] for r in result]
-
-        assert "id" in columns
-        assert "user_id" in columns
-        assert "content" in columns
-        assert "privacy_level" in columns
-        assert "published_url" in columns
-
-        # Check extropy_ledger table
-        result = await conn.fetch(
-            "SELECT column_name FROM information_schema.columns "
-            "WHERE table_name = 'extropy_ledger'"
-        )
-        ledger_columns = [r["column_name"] for r in result]
-
-        assert "amount" in ledger_columns
-        assert "transaction_type" in ledger_columns
-```
-
-### Success Criteria
-✅ Writer → Research enrichment flow works
-✅ Writer → Backend publish flow works
-✅ Backend attribution → $EXTROPY transfer works
-✅ Health checks pass for all services
-✅ Database schema compatible across modules
-✅ All tests pass (pytest)
-
-### Commit Message
-```
-test(orchestrator): Add integration tests for all modules
-
-Implements end-to-end workflow validation:
-- Writer → Research enrichment
-- Writer → Backend publish
-- Attribution → $EXTROPY transfer
-- Health monitoring
-- Database compatibility
-
-Validates Wave 2 completion.
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
-
-Co-Authored-By: Claude <noreply@anthropic.com>
-```
-
-**Update issue #60 when complete.**
+**When complete**: Create PR "Wave 2 Phase 3: PSI - Integration Tests"
