@@ -1,0 +1,198 @@
+---
+import AdminLayout from '../layouts/AdminLayout.astro';
+
+// Mock metrics - in production fetch from API
+const metrics = {
+  requests: {
+    total: 1234567,
+    rate: '2.3k/s',
+    errors: 42,
+    errorRate: '0.003%'
+  },
+  performance: {
+    p50: '23ms',
+    p95: '156ms',
+    p99: '342ms',
+    avg: '67ms'
+  },
+  infrastructure: {
+    cpu: 42,
+    memory: 68,
+    disk: 35,
+    connections: 847
+  }
+};
+---
+
+<AdminLayout title="Monitoring">
+  <div class="p-8">
+    <!-- Header -->
+    <div class="mb-8">
+      <h1 class="text-3xl font-bold">System Monitoring</h1>
+      <p class="text-muted-foreground">Real-time performance metrics and system health</p>
+    </div>
+
+    <!-- Metrics Overview -->
+    <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8">
+      <div class="rounded-lg border bg-card p-6">
+        <h3 class="text-sm font-medium text-muted-foreground mb-2">Request Rate</h3>
+        <p class="text-2xl font-bold">{metrics.requests.rate}</p>
+        <p class="text-xs text-muted-foreground mt-1">Total: {metrics.requests.total.toLocaleString()}</p>
+      </div>
+      <div class="rounded-lg border bg-card p-6">
+        <h3 class="text-sm font-medium text-muted-foreground mb-2">Error Rate</h3>
+        <p class="text-2xl font-bold">{metrics.requests.errorRate}</p>
+        <p class="text-xs text-muted-foreground mt-1">Errors: {metrics.requests.errors}</p>
+      </div>
+      <div class="rounded-lg border bg-card p-6">
+        <h3 class="text-sm font-medium text-muted-foreground mb-2">Avg Response Time</h3>
+        <p class="text-2xl font-bold">{metrics.performance.avg}</p>
+        <p class="text-xs text-muted-foreground mt-1">P95: {metrics.performance.p95}</p>
+      </div>
+      <div class="rounded-lg border bg-card p-6">
+        <h3 class="text-sm font-medium text-muted-foreground mb-2">Active Connections</h3>
+        <p class="text-2xl font-bold">{metrics.infrastructure.connections}</p>
+        <p class="text-xs text-muted-foreground mt-1">WebSocket & HTTP</p>
+      </div>
+    </div>
+
+    <!-- Performance Distribution -->
+    <div class="rounded-lg border bg-card p-6 mb-8">
+      <h3 class="text-lg font-semibold mb-4">Response Time Distribution</h3>
+      <div class="grid grid-cols-4 gap-4">
+        <div>
+          <p class="text-sm text-muted-foreground">P50 (Median)</p>
+          <p class="text-xl font-semibold">{metrics.performance.p50}</p>
+        </div>
+        <div>
+          <p class="text-sm text-muted-foreground">P95</p>
+          <p class="text-xl font-semibold">{metrics.performance.p95}</p>
+        </div>
+        <div>
+          <p class="text-sm text-muted-foreground">P99</p>
+          <p class="text-xl font-semibold">{metrics.performance.p99}</p>
+        </div>
+        <div>
+          <p class="text-sm text-muted-foreground">Average</p>
+          <p class="text-xl font-semibold">{metrics.performance.avg}</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Infrastructure Health -->
+    <div class="grid gap-6 md:grid-cols-2 mb-8">
+      <!-- Resource Usage -->
+      <div class="rounded-lg border bg-card p-6">
+        <h3 class="text-lg font-semibold mb-4">Resource Usage</h3>
+        <div class="space-y-4">
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-sm font-medium">CPU Usage</span>
+              <span class="text-sm text-muted-foreground">{metrics.infrastructure.cpu}%</span>
+            </div>
+            <div class="w-full bg-secondary rounded-full h-2">
+              <div class="bg-primary h-2 rounded-full" style={`width: ${metrics.infrastructure.cpu}%`}></div>
+            </div>
+          </div>
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-sm font-medium">Memory Usage</span>
+              <span class="text-sm text-muted-foreground">{metrics.infrastructure.memory}%</span>
+            </div>
+            <div class="w-full bg-secondary rounded-full h-2">
+              <div class="bg-primary h-2 rounded-full" style={`width: ${metrics.infrastructure.memory}%`}></div>
+            </div>
+          </div>
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-sm font-medium">Disk Usage</span>
+              <span class="text-sm text-muted-foreground">{metrics.infrastructure.disk}%</span>
+            </div>
+            <div class="w-full bg-secondary rounded-full h-2">
+              <div class="bg-primary h-2 rounded-full" style={`width: ${metrics.infrastructure.disk}%`}></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Alerts -->
+      <div class="rounded-lg border bg-card p-6">
+        <h3 class="text-lg font-semibold mb-4">Recent Alerts</h3>
+        <div class="space-y-3">
+          <div class="flex items-start gap-3">
+            <div class="w-2 h-2 bg-yellow-500 rounded-full mt-1.5"></div>
+            <div>
+              <p class="text-sm font-medium">High memory usage on worker-3</p>
+              <p class="text-xs text-muted-foreground">5 minutes ago - Threshold: 80%</p>
+            </div>
+          </div>
+          <div class="flex items-start gap-3">
+            <div class="w-2 h-2 bg-green-500 rounded-full mt-1.5"></div>
+            <div>
+              <p class="text-sm font-medium">Database backup completed</p>
+              <p class="text-xs text-muted-foreground">2 hours ago - Duration: 3m 42s</p>
+            </div>
+          </div>
+          <div class="flex items-start gap-3">
+            <div class="w-2 h-2 bg-blue-500 rounded-full mt-1.5"></div>
+            <div>
+              <p class="text-sm font-medium">SSL certificate renewed</p>
+              <p class="text-xs text-muted-foreground">Yesterday - Valid until: 2026-06-18</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Service Status -->
+    <div class="rounded-lg border bg-card">
+      <div class="p-6">
+        <h3 class="text-lg font-semibold mb-4">Service Status</h3>
+        <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div class="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+            <span class="text-sm font-medium">API Server</span>
+            <span class="inline-flex items-center gap-1.5 text-sm">
+              <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+              Operational
+            </span>
+          </div>
+          <div class="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+            <span class="text-sm font-medium">PostgreSQL</span>
+            <span class="inline-flex items-center gap-1.5 text-sm">
+              <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+              Operational
+            </span>
+          </div>
+          <div class="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+            <span class="text-sm font-medium">Qdrant</span>
+            <span class="inline-flex items-center gap-1.5 text-sm">
+              <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+              Operational
+            </span>
+          </div>
+          <div class="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+            <span class="text-sm font-medium">Valkey Cache</span>
+            <span class="inline-flex items-center gap-1.5 text-sm">
+              <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+              Operational
+            </span>
+          </div>
+          <div class="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+            <span class="text-sm font-medium">WebSocket Server</span>
+            <span class="inline-flex items-center gap-1.5 text-sm">
+              <div class="w-2 h-2 bg-green-500 rounded-full"></div>
+              Operational
+            </span>
+          </div>
+          <div class="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+            <span class="text-sm font-medium">File Storage</span>
+            <span class="inline-flex items-center gap-1.5 text-sm">
+              <div class="w-2 h-2 bg-yellow-500 rounded-full"></div>
+              Degraded
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</AdminLayout>

@@ -1,0 +1,59 @@
+# Pre-commit hooks for bulletproof testing
+# Nothing is "done" until these pass
+
+repos:
+  # Python code quality
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  # Security scanning
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.8.0
+    hooks:
+      - id: bandit
+        args: [-r, src/, --severity-level, medium]
+        exclude: tests/
+
+  # Type checking
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.14.1
+    hooks:
+      - id: mypy
+        additional_dependencies: [types-all]
+        args: [--ignore-missing-imports]
+
+  # Local hooks for custom validation
+  - repo: local
+    hooks:
+      - id: verify-imports
+        name: Verify all imports exist
+        entry: python testing-framework/pre-commit/verify_imports.py
+        language: python
+        types: [python]
+        pass_filenames: true
+        
+      - id: test-changed-files
+        name: Run tests for changed files
+        entry: python testing-framework/pre-commit/test_runner.py
+        language: python
+        types: [python]
+        pass_filenames: true
+        always_run: true
+        
+      - id: security-check
+        name: Security vulnerability scan
+        entry: python testing-framework/pre-commit/security_scan.py
+        language: python
+        types: [python]
+        pass_filenames: false
+        
+      - id: diagnostic-check
+        name: Verify diagnostic error handling
+        entry: python testing-framework/pre-commit/diagnostic_check.py
+        language: python
+        types: [python]
+        pass_filenames: true
