@@ -1,0 +1,79 @@
+sequenceDiagram
+    %% Semantic Search Query Flow
+    participant Client as API Client
+    participant API as FastAPI /query
+    participant Cache as Redis Cache
+    participant OpenAI as OpenAI API
+    participant Chroma as ChromaDB
+    participant PG as PostgreSQL
+    participant Analyzer as Pattern Analyzer
+
+    Note over Client,Analyzer: Semantic Search & Pattern Analysis
+
+    %% Query request
+    Client->>API: POST /query<br/>{ query: "storytelling frameworks",<br/>platforms: ["twitter", "youtube"],<br/>limit: 20 }
+    activate API
+
+    %% Check query cache
+    API->>Cache: GET query:hash(storytelling frameworks)
+    alt Cache hit (< 5 min old)
+        Cache-->>API: Cached results
+        API-->>Client: 200 OK (from cache)
+    else Cache miss
+        %% Generate query embedding
+        API->>OpenAI: Create embedding
+        activate OpenAI
+        OpenAI->>OpenAI: text-embedding-3-small<br/>"storytelling frameworks"
+        OpenAI-->>API: embedding: [0.123, -0.456, ...]
+        deactivate OpenAI
+
+        %% Vector similarity search
+        API->>Chroma: query(embedding, n_results=20)
+        activate Chroma
+        Chroma->>Chroma: Cosine similarity search
+        Note right of Chroma: Find top 20 most similar<br/>content embeddings
+        Chroma-->>API: [<br/>  { id: uuid1, distance: 0.15 },<br/>  { id: uuid2, distance: 0.18 },<br/>  ...<br/>]
+        deactivate Chroma
+
+        %% Fetch full content from PostgreSQL
+        API->>PG: SELECT * FROM contents<br/>WHERE id IN (uuid1, uuid2, ...)<br/>ORDER BY array_position(...)
+        activate PG
+        PG-->>API: [<br/>  { id, platform, content_body, analysis, ... },<br/>  ...<br/>]
+        deactivate PG
+
+        %% Enrich with author data
+        API->>PG: SELECT * FROM authors<br/>WHERE id IN (author_ids)
+        PG-->>API: Author metadata
+
+        %% Pattern detection
+        API->>Analyzer: Detect patterns across results
+        activate Analyzer
+
+        Analyzer->>Analyzer: Group by author
+        Analyzer->>Analyzer: Identify common frameworks
+        Note right of Analyzer: Find:<br/>- AIDA, PAS, BAB patterns<br/>- Hook types<br/>- Theme clusters<br/>- Cross-platform elaborations
+
+        Analyzer->>PG: SELECT * FROM patterns<br/>WHERE author_id IN (...)
+        PG-->>Analyzer: Existing patterns
+
+        Analyzer-->>API: {<br/>  common_frameworks: ["AIDA", "PAS"],<br/>  top_hooks: ["curiosity", "pain"],<br/>  elaboration_chains: [...]<br/>}
+        deactivate Analyzer
+
+        %% Cache results
+        API->>Cache: SETEX query:hash(...)<br/>TTL: 300s (5 min)
+        Cache-->>API: Cached
+
+        %% Return results
+        API-->>Client: 200 OK<br/>{<br/>  results: [ content objects ],<br/>  patterns: { frameworks, hooks },<br/>  metadata: { total: 20, query_time_ms: 245 }<br/>}
+    end
+    deactivate API
+
+    Note over Client,Analyzer: Response time:<br/>- Cached: ~10ms<br/>- Uncached: ~200-500ms<br/>- Cost: ~$0.0001 per query
+
+    %% Optional: Save search to research session
+    Client->>API: POST /research/sessions/{id}/queries<br/>{ query, results }
+    API->>PG: INSERT INTO research_session_queries
+    PG-->>API: Query saved
+    API-->>Client: 201 Created
+
+    Note over Client,Analyzer: Semantic search enables:<br/>- Natural language queries<br/>- Cross-platform discovery<br/>- Pattern-based insights<br/>- Research session tracking

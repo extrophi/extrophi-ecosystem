@@ -1,0 +1,178 @@
+erDiagram
+    %% PostgreSQL Database Schema - IAC-032 Scraper Backend
+    %% Shows entity relationships and key attributes
+
+    USERS ||--o{ CARDS : creates
+    USERS ||--o{ API_KEYS : owns
+    USERS ||--o{ EXTROPY_LEDGER : "from_user"
+    USERS ||--o{ EXTROPY_LEDGER : "to_user"
+
+    CARDS ||--o{ ATTRIBUTIONS : "source_card"
+    CARDS ||--o{ ATTRIBUTIONS : "target_card"
+    CARDS ||--o{ EXTROPY_LEDGER : "related_to"
+    CARDS }o--|| CONTENTS : "sourced_from"
+    CARDS }o--|| CARDS : "parent_card"
+
+    CONTENTS }o--|| AUTHORS : "created_by"
+    CONTENTS ||--o{ PATTERNS : references
+
+    AUTHORS ||--o{ CONTENTS : creates
+    AUTHORS ||--o{ PATTERNS : "has_patterns"
+
+    ATTRIBUTIONS ||--o{ EXTROPY_LEDGER : triggers
+
+    USERS {
+        uuid id PK
+        string username UK "Unique username"
+        string email UK "Unique email"
+        string display_name
+        text bio
+        string avatar_url
+        decimal extropy_balance "8 decimal places"
+        string api_key_hash "SHA-256"
+        jsonb metadata
+        timestamp created_at
+        timestamp updated_at
+        timestamp last_login_at
+    }
+
+    API_KEYS {
+        uuid id PK
+        uuid user_id FK
+        string key_name
+        string key_prefix "First 8-12 chars"
+        string key_hash UK "SHA-256"
+        boolean is_active
+        boolean is_revoked
+        integer rate_limit_requests "Default: 1000/hour"
+        integer rate_limit_window_seconds "Default: 3600"
+        integer current_usage_count
+        timestamp rate_limit_window_start
+        timestamp last_used_at
+        bigint request_count "Total all time"
+        timestamp expires_at
+        jsonb metadata
+        timestamp created_at
+        timestamp updated_at
+        timestamp revoked_at
+    }
+
+    CONTENTS {
+        uuid id PK
+        string platform "twitter, youtube, reddit, web"
+        text source_url UK "Unique per platform"
+        string author_id FK "Platform-specific"
+        text content_title
+        text content_body
+        timestamp published_at
+        jsonb metrics "likes, views, engagement"
+        jsonb analysis "frameworks, hooks, themes"
+        vector embedding "1536 dims, pgvector"
+        jsonb extra_metadata
+        timestamp scraped_at
+        timestamp analyzed_at
+        timestamp updated_at
+    }
+
+    AUTHORS {
+        string id PK "platform_username"
+        string platform "twitter, youtube, etc"
+        string username
+        string display_name
+        text bio
+        string follower_count "Large numbers as string"
+        string following_count
+        string content_count
+        string authority_score "0.0-1.0"
+        text profile_url
+        text avatar_url
+        jsonb extra_metadata
+        timestamp discovered_at
+        timestamp last_updated
+    }
+
+    PATTERNS {
+        uuid id PK
+        string author_id FK "References AUTHORS"
+        string pattern_type "elaboration, theme, hook, framework"
+        text description
+        jsonb content_ids "Array of UUIDs"
+        string confidence_score "0.0-1.0"
+        jsonb analysis
+        timestamp discovered_at
+    }
+
+    RESEARCH_SESSIONS {
+        uuid id PK
+        string session_name
+        text project_brief
+        jsonb target_authorities "Author IDs"
+        jsonb platforms "twitter, youtube, etc"
+        jsonb keywords
+        string total_pieces_scraped
+        string total_pieces_analyzed
+        string patterns_detected
+        jsonb outputs "course_script, briefs"
+        string status "in_progress, completed, failed"
+        timestamp created_at
+        timestamp completed_at
+    }
+
+    CARDS {
+        uuid id PK
+        uuid user_id FK
+        string title
+        text body
+        array tags "Text array"
+        string privacy_level "PRIVATE, PERSONAL, BUSINESS, IDEAS"
+        string category "UNASSIMILATED, PROGRAM, etc"
+        string source_platform
+        text source_url
+        uuid content_id FK "Optional link to CONTENTS"
+        uuid parent_card_id FK "Self-reference"
+        array related_card_ids "UUID array"
+        boolean is_published
+        text published_url
+        jsonb metadata
+        timestamp created_at
+        timestamp updated_at
+        timestamp published_at
+    }
+
+    EXTROPY_LEDGER {
+        uuid id PK
+        uuid from_user_id FK "Nullable"
+        uuid to_user_id FK "Nullable"
+        decimal amount "8 decimal places"
+        string transaction_type "publish_reward, attribution_transfer, etc"
+        uuid card_id FK "Nullable"
+        uuid attribution_id FK "Nullable"
+        decimal from_user_balance_after
+        decimal to_user_balance_after
+        text description
+        jsonb metadata
+        timestamp created_at "Immutable, no updates"
+    }
+
+    ATTRIBUTIONS {
+        uuid id PK
+        uuid source_card_id FK "Card making the citation"
+        uuid target_card_id FK "Card being cited"
+        string attribution_type "citation, remix, reply"
+        text context
+        text excerpt
+        decimal extropy_transferred "8 decimal places"
+        jsonb metadata
+        timestamp created_at
+    }
+
+    %% Indexes (documented in comments)
+    %% CONTENTS: idx_platform_author, idx_platform_published, idx_embedding_ivfflat (vector cosine)
+    %% AUTHORS: idx_platform_username, idx_authority_score
+    %% PATTERNS: idx_author_pattern_type
+    %% RESEARCH_SESSIONS: idx_session_status, idx_session_created
+    %% API_KEYS: Multiple indexes on user_id, key_hash, is_active, expires_at
+    %% USERS: idx_users_username, idx_users_email, idx_users_created_at
+    %% CARDS: 8 indexes covering user_id, privacy, category, published status
+    %% EXTROPY_LEDGER: 6 indexes covering user IDs, transaction type, timestamps
+    %% ATTRIBUTIONS: 6 indexes covering source/target cards, type, timestamps

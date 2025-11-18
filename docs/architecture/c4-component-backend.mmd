@@ -1,0 +1,157 @@
+graph TB
+    %% C4 Component Diagram - IAC-032 Scraper Backend
+    %% Shows internal components of the FastAPI application
+
+    CLIENT[HTTP Client]
+
+    subgraph api["FastAPI Application"]
+        direction TB
+
+        subgraph routes["API Routes"]
+            HEALTH[Health Router<br/>GET /health]
+            SCRAPE[Scrape Router<br/>POST /scrape/:platform]
+            ANALYZE[Analyze Router<br/>POST /analyze]
+            QUERY[Query Router<br/>POST /query]
+            APIKEYS[API Keys Router<br/>/api-keys/*]
+            TOKENS[Tokens Router<br/>/tokens/*]
+            PUBLISH[Publish Router<br/>POST /publish]
+            ATTR[Attributions Router<br/>/attributions/*]
+        end
+
+        subgraph middleware["Middleware"]
+            CORS[CORS Handler]
+            AUTH[API Key Auth]
+            RATELIM[Rate Limiter]
+        end
+
+        subgraph scrapers["Scraper Module"]
+            BASE[BaseScraper<br/>Abstract Interface]
+            REG[Scraper Registry<br/>Factory Pattern]
+
+            subgraph adapters["Platform Adapters"]
+                TWIT[Twitter Scraper<br/>Playwright OAuth]
+                YT[YouTube Scraper<br/>youtube-transcript-api]
+                RED[Reddit Scraper<br/>PRAW]
+                WEB[Web Scraper<br/>Jina.ai Reader]
+            end
+
+            CACHE[Response Cache<br/>Redis TTL]
+            UTILS[Scraper Utils<br/>Validation, Parsing]
+        end
+
+        subgraph analysis["Analysis Engine"]
+            LLM[LLM Client<br/>OpenAI GPT-4]
+            EMB[Embeddings<br/>text-embedding-3]
+            PATTERN[Pattern Detector<br/>Cross-platform]
+            COURSE[Course Generator<br/>Script Builder]
+        end
+
+        subgraph vector["Vector Store"]
+            CHROMA[ChromaDB<br/>Local RAG]
+            SEARCH[Semantic Search<br/>Cosine Similarity]
+        end
+
+        subgraph db["Database Layer"]
+            CONN[Connection Pool<br/>SQLAlchemy]
+            MODELS[ORM Models<br/>Content, Author,<br/>Card, Ledger]
+            REPOS[Repositories<br/>CRUD Operations]
+        end
+
+        subgraph auth["Authentication"]
+            KEYGEN[Key Generator<br/>SHA-256]
+            KEYVAL[Key Validator<br/>Hash Comparison]
+            USAGE[Usage Tracker<br/>Request Counter]
+        end
+
+        subgraph tokens["$EXTROPY System"]
+            LEDGER[Ledger Service<br/>Immutable Log]
+            TRANSFER[Transfer Service<br/>Balance Updates]
+            REWARD[Reward Calculator<br/>Attribution Rules]
+        end
+    end
+
+    PG[(PostgreSQL<br/>+ pgvector)]
+    REDIS[(Redis)]
+
+    %% Request flow
+    CLIENT -->|"HTTP Request"| CORS
+    CORS --> AUTH
+    AUTH --> RATELIM
+    RATELIM --> HEALTH
+    RATELIM --> SCRAPE
+    RATELIM --> ANALYZE
+    RATELIM --> QUERY
+    RATELIM --> APIKEYS
+    RATELIM --> TOKENS
+    RATELIM --> PUBLISH
+    RATELIM --> ATTR
+
+    %% Scraping flow
+    SCRAPE --> REG
+    REG --> TWIT
+    REG --> YT
+    REG --> RED
+    REG --> WEB
+    TWIT --> CACHE
+    YT --> CACHE
+    RED --> CACHE
+    WEB --> CACHE
+    TWIT --> UTILS
+    CACHE --> REPOS
+
+    %% Analysis flow
+    ANALYZE --> LLM
+    ANALYZE --> PATTERN
+    LLM --> EMB
+    EMB --> CHROMA
+    PATTERN --> COURSE
+    PATTERN --> REPOS
+
+    %% Query flow
+    QUERY --> SEARCH
+    SEARCH --> CHROMA
+    SEARCH --> REPOS
+
+    %% Publishing flow
+    PUBLISH --> REPOS
+    PUBLISH --> LEDGER
+    PUBLISH --> REWARD
+
+    %% Attribution flow
+    ATTR --> TRANSFER
+    TRANSFER --> LEDGER
+    LEDGER --> REPOS
+
+    %% Auth flow
+    APIKEYS --> KEYGEN
+    APIKEYS --> KEYVAL
+    KEYVAL --> USAGE
+    AUTH --> KEYVAL
+
+    %% Token flow
+    TOKENS --> TRANSFER
+    TOKENS --> LEDGER
+
+    %% Database connections
+    REPOS --> CONN
+    CONN --> PG
+    CACHE --> REDIS
+    CHROMA --> PG
+    USAGE --> REDIS
+
+    %% Styling
+    classDef route fill:#61DAFB,stroke:#21A1C4,color:#000
+    classDef middleware fill:#F39C12,stroke:#D68910,color:#000
+    classDef scraper fill:#27AE60,stroke:#1E8449,color:#fff
+    classDef analysis fill:#8E44AD,stroke:#6C3483,color:#fff
+    classDef db fill:#3498DB,stroke:#2471A3,color:#fff
+    classDef auth fill:#E74C3C,stroke:#922B21,color:#fff
+    classDef token fill:#F1C40F,stroke:#D4AC0D,color:#000
+
+    class HEALTH,SCRAPE,ANALYZE,QUERY,APIKEYS,TOKENS,PUBLISH,ATTR route
+    class CORS,AUTH,RATELIM middleware
+    class BASE,REG,TWIT,YT,RED,WEB,CACHE,UTILS scraper
+    class LLM,EMB,PATTERN,COURSE analysis
+    class CONN,MODELS,REPOS,CHROMA,SEARCH db
+    class KEYGEN,KEYVAL,USAGE auth
+    class LEDGER,TRANSFER,REWARD token

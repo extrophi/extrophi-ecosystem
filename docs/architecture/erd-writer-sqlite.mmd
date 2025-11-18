@@ -1,0 +1,150 @@
+erDiagram
+    %% SQLite Database Schema - BrainDump Writer
+    %% Shows entity relationships for local voice journaling app
+
+    RECORDINGS ||--o{ TRANSCRIPTS : "transcribed_as"
+    TRANSCRIPTS ||--o{ SEGMENTS : "contains"
+
+    CHAT_SESSIONS ||--o{ MESSAGES : contains
+    CHAT_SESSIONS ||--o{ SESSION_TAGS : "tagged_with"
+
+    MESSAGES }o--|| RECORDINGS : "may_reference"
+
+    TAGS ||--o{ SESSION_TAGS : "tags"
+
+    CARDS }o--|| CHAT_SESSIONS : "from_session"
+    CARDS }o--|| MESSAGES : "from_message"
+    CARDS }o--|| CARDS : "parent_card"
+
+    USAGE_EVENTS }o--|| CHAT_SESSIONS : "tracked_in"
+
+    RECORDINGS {
+        integer id PK "Auto-increment"
+        string filepath "Path to WAV file"
+        integer duration_ms
+        integer sample_rate "e.g., 16000 Hz"
+        smallint channels "1 or 2"
+        integer file_size_bytes
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    TRANSCRIPTS {
+        integer id PK
+        integer recording_id FK
+        text text "Full transcript"
+        string language "e.g., 'en'"
+        real confidence "0.0-1.0"
+        string plugin_name "whisper.cpp or candle"
+        integer transcription_duration_ms
+        timestamp created_at
+    }
+
+    SEGMENTS {
+        integer id PK
+        integer transcript_id FK
+        integer start_ms "Timestamp start"
+        integer end_ms "Timestamp end"
+        text text "Segment text"
+        real confidence "0.0-1.0"
+    }
+
+    CHAT_SESSIONS {
+        integer id PK
+        string title "Optional session name"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    MESSAGES {
+        integer id PK
+        integer session_id FK
+        integer recording_id FK "Nullable"
+        string role "user or assistant"
+        text content "Message text"
+        json privacy_tags "Array of detected PII tags"
+        timestamp created_at
+    }
+
+    PROMPT_TEMPLATES {
+        integer id PK
+        string name "Template identifier"
+        text system_prompt "System instructions"
+        text description "Optional description"
+        boolean is_default "Default template flag"
+        timestamp created_at
+    }
+
+    PROMPTS {
+        integer id PK
+        string name "Unique name"
+        string title "Display title"
+        text content "Prompt content"
+        boolean is_system "System vs user-created"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    TAGS {
+        integer id PK
+        string name "Unique tag name"
+        string color "Hex color code"
+        timestamp created_at
+    }
+
+    SESSION_TAGS {
+        integer session_id FK
+        integer tag_id FK
+        timestamp created_at
+    }
+
+    USAGE_EVENTS {
+        integer id PK
+        string event_type "transcription, chat_request, etc"
+        string provider "openai or claude"
+        string prompt_name "Which prompt used"
+        integer token_count "API usage"
+        integer recording_duration_ms
+        timestamp created_at
+    }
+
+    CARDS {
+        integer id PK
+        text content "Card markdown content"
+        string privacy_level "PRIVATE, PERSONAL, BUSINESS, IDEAS"
+        boolean published
+        string git_sha "Git commit SHA if published"
+        string category "UNASSIMILATED, PROGRAM, CATEGORIZED, etc"
+        integer session_id FK "Nullable"
+        integer message_id FK "Nullable"
+        integer parent_card_id FK "Self-reference, nullable"
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    BACKUP_SETTINGS {
+        integer id PK
+        boolean enabled
+        string frequency "daily, weekly, manual"
+        string backup_path "Directory path"
+        integer retention_count "How many to keep"
+        timestamp last_backup_at
+        timestamp updated_at
+    }
+
+    BACKUP_HISTORY {
+        integer id PK
+        string file_path "Backup file location"
+        integer file_size_bytes
+        timestamp created_at
+        boolean is_automatic "Auto vs manual"
+        string status "success or failed"
+        text error_message "Nullable"
+    }
+
+    %% Database characteristics
+    %% - SQLite for local-first, privacy-focused storage
+    %% - No user authentication (single-user desktop app)
+    %% - All data stored locally
+    %% - Backup system for data safety
+    %% - Privacy scanning before publishing
