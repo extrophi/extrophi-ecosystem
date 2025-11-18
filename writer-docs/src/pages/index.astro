@@ -1,0 +1,82 @@
+---
+import Counter from '../islands/Counter.svelte';
+import '../styles/global.css';
+
+const title = 'Writer Module Documentation';
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{title}</title>
+  </head>
+  <body class="bg-gray-50 dark:bg-gray-900">
+    <main class="container mx-auto px-4 py-8">
+      <div class="max-w-4xl mx-auto">
+        <h1 class="text-4xl font-bold text-gray-900 dark:text-white mb-4">
+          {title}
+        </h1>
+
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
+          <h2 class="text-2xl font-semibold text-gray-800 dark:text-gray-100 mb-3">
+            Welcome to the Writer Module Docs
+          </h2>
+          <p class="text-gray-600 dark:text-gray-300 mb-4">
+            This is the Astro-powered documentation site for the Writer module of the Extrophi Ecosystem.
+            It features Svelte 5 islands for interactive components and TailwindCSS for styling.
+          </p>
+
+          <div class="bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500 p-4 mb-4">
+            <p class="text-sm text-blue-700 dark:text-blue-300">
+              <strong>Islands Architecture:</strong> This page uses Astro's islands architecture,
+              where only the interactive components are hydrated with JavaScript, keeping the rest as static HTML.
+            </p>
+          </div>
+        </div>
+
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+          <h3 class="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-3">
+            Interactive Demo: Svelte 5 Counter Island
+          </h3>
+          <p class="text-gray-600 dark:text-gray-300 mb-4">
+            This counter component is a Svelte 5 island that uses runes ($state) for reactivity:
+          </p>
+
+          <Counter client:load />
+        </div>
+
+        <div class="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+            <h4 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">
+              Astro
+            </h4>
+            <p class="text-gray-600 dark:text-gray-300 text-sm">
+              Fast, content-focused static site generator with islands architecture
+            </p>
+          </div>
+
+          <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+            <h4 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">
+              Svelte 5
+            </h4>
+            <p class="text-gray-600 dark:text-gray-300 text-sm">
+              Interactive islands using Svelte 5 with runes for reactivity
+            </p>
+          </div>
+
+          <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+            <h4 class="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">
+              TailwindCSS
+            </h4>
+            <p class="text-gray-600 dark:text-gray-300 text-sm">
+              Utility-first CSS framework for rapid UI development
+            </p>
+          </div>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>
