@@ -7,12 +7,14 @@ from backend.api.routes import (
     analyze_router,
     api_keys_router,
     attributions_router,
+    audit_router,
     health_router,
     publish_router,
     query_router,
     scrape_router,
     tokens_router,
 )
+from backend.middleware.audit import setup_audit_logging
 
 app = FastAPI(
     title="IAC-032 Unified Scraper",
@@ -21,6 +23,7 @@ app = FastAPI(
 )
 
 setup_cors(app)
+setup_audit_logging(app)
 
 # Register all routers
 app.include_router(health_router)
@@ -31,6 +34,7 @@ app.include_router(api_keys_router)
 app.include_router(tokens_router)
 app.include_router(publish_router)
 app.include_router(attributions_router)
+app.include_router(audit_router)
 
 
 @app.get("/")
