@@ -13,6 +13,7 @@ from orchestrator.main import (
     SERVICES,
     app,
     check_service_health,
+    health_checker,
     proxy_request_with_retry,
 )
 
@@ -412,3 +413,105 @@ class TestConfiguration:
         assert SERVICES["writer"] == "http://localhost:8000"
         assert SERVICES["research"] == "http://localhost:8001"
         assert SERVICES["backend"] == "http://localhost:8002"
+
+
+class TestHealthStatusEndpoint:
+    """Tests for /health/status endpoint."""
+
+    def test_health_status_endpoint_exists(self, client):
+        """Test that /health/status endpoint is accessible."""
+        response = client.get("/health/status")
+        assert response.status_code == 200
+
+    def test_health_status_returns_monitoring_data(self, client):
+        """Test that /health/status returns comprehensive monitoring data."""
+        response = client.get("/health/status")
+        assert response.status_code == 200
+        data = response.json()
+
+        # Verify structure
+        assert "overall" in data
+        assert "timestamp" in data
+        assert "services" in data
+        assert "monitoring" in data
+
+        # Verify services
+        assert "writer" in data["services"]
+        assert "research" in data["services"]
+        assert "backend" in data["services"]
+
+        # Verify monitoring info
+        assert "check_interval" in data["monitoring"]
+        assert "running" in data["monitoring"]
+
+    def test_health_status_service_details(self, client):
+        """Test that service details include all required fields."""
+        response = client.get("/health/status")
+        assert response.status_code == 200
+        data = response.json()
+
+        for service_name, service_data in data["services"].items():
+            assert "name" in service_data
+            assert "url" in service_data
+            assert "status" in service_data
+            assert "circuit_state" in service_data
+            assert "consecutive_failures" in service_data
+            assert "uptime_percentage" in service_data
+
+    def test_health_status_specific_service_writer(self, client):
+        """Test getting health status for writer service."""
+        response = client.get("/health/status/writer")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "writer"
+        assert data["url"] == "http://localhost:8000"
+
+    def test_health_status_specific_service_research(self, client):
+        """Test getting health status for research service."""
+        response = client.get("/health/status/research")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "research"
+        assert data["url"] == "http://localhost:8001"
+
+    def test_health_status_specific_service_backend(self, client):
+        """Test getting health status for backend service."""
+        response = client.get("/health/status/backend")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["name"] == "backend"
+        assert data["url"] == "http://localhost:8002"
+
+    def test_health_status_nonexistent_service(self, client):
+        """Test that requesting nonexistent service returns 404."""
+        response = client.get("/health/status/nonexistent")
+        assert response.status_code == 404
+        data = response.json()
+        assert "not found" in data["detail"].lower()
+        assert "writer" in data["detail"]
+        assert "research" in data["detail"]
+        assert "backend" in data["detail"]
+
+
+class TestHealthCheckerIntegration:
+    """Tests for health checker integration."""
+
+    def test_health_checker_configured(self):
+        """Test that health checker is configured correctly."""
+        assert health_checker.check_interval == 30
+        assert health_checker.timeout == 5.0
+        assert health_checker.max_history == 100
+
+    def test_health_checker_has_all_services(self):
+        """Test that health checker monitors all services."""
+        assert len(health_checker.services) == 3
+        assert "writer" in health_checker.services
+        assert "research" in health_checker.services
+        assert "backend" in health_checker.services
+
+    def test_health_checker_circuit_breakers_initialized(self):
+        """Test that circuit breakers are initialized for all services."""
+        assert len(health_checker.circuit_breakers) == 3
+        assert "writer" in health_checker.circuit_breakers
+        assert "research" in health_checker.circuit_breakers
+        assert "backend" in health_checker.circuit_breakers

@@ -7,6 +7,11 @@ API Gateway for coordinating Writer, Research, and Backend modules in the Extrop
 - **Request Routing**: Routes requests to appropriate services
   - `/api/enrich` → Research module (port 8001)
   - `/api/publish` → Backend module (port 8002)
+- **Health Monitoring**: Continuous health monitoring with circuit breaker pattern
+  - Background health checks every 30 seconds
+  - Circuit breaker for fault tolerance
+  - Service uptime tracking
+  - Detailed status reporting via `/health/status` endpoint
 - **Health Aggregation**: `/health` endpoint aggregates health from all modules
 - **Timeout Handling**: 30-second timeout for all proxied requests
 - **Retry Logic**: Automatic retry (3 attempts) on failure
@@ -86,6 +91,51 @@ Response example:
 }
 ```
 
+### Health Status (Detailed Monitoring)
+```
+GET /health/status
+```
+Returns detailed health status from the continuous monitoring system, updated every 30 seconds.
+
+Response example:
+```json
+{
+  "overall": "healthy",
+  "timestamp": "2025-11-18T12:00:00",
+  "services": {
+    "writer": {
+      "name": "writer",
+      "url": "http://localhost:8000",
+      "status": "healthy",
+      "last_check": "2025-11-18T12:00:00",
+      "response_time_ms": 150.5,
+      "error": null,
+      "circuit_state": "closed",
+      "consecutive_failures": 0,
+      "uptime_percentage": 99.5,
+      "details": {}
+    },
+    "research": { "..." },
+    "backend": { "..." }
+  },
+  "monitoring": {
+    "check_interval": 30,
+    "running": true
+  }
+}
+```
+
+### Service-Specific Health Status
+```
+GET /health/status/{service_name}
+```
+Returns detailed health status for a specific service (writer, research, or backend).
+
+Available services:
+- `/health/status/writer`
+- `/health/status/research`
+- `/health/status/backend`
+
 ## Configuration
 
 Service endpoints are configured in `main.py`:
@@ -152,12 +202,21 @@ The Orchestrator acts as an API Gateway that:
 
 ## Success Criteria
 
+### PHI Agent (API Gateway)
 ✅ Routes to all 3 modules (Writer, Research, Backend)
 ✅ Health endpoint aggregates status from all services
 ✅ Timeout works (30s)
 ✅ Retry works (3x)
 ✅ Tests pass
 ✅ CORS configured
+
+### CHI Agent (Health Monitoring)
+✅ Background monitoring runs every 30 seconds
+✅ Checks all 3 services (Writer, Research, Backend)
+✅ Stores status with uptime tracking
+✅ `/health/status` endpoint works
+✅ Circuit breaker pattern implemented
+✅ Tests pass (25 health checker tests + 30 integration tests)
 
 ## Dependencies
 
@@ -166,7 +225,46 @@ The Orchestrator acts as an API Gateway that:
 - httpx >= 0.25.0 (for async HTTP client with retry)
 - pydantic >= 2.5.0
 
+## Health Monitoring System
+
+The orchestrator includes a sophisticated health monitoring system built on the circuit breaker pattern for fault tolerance.
+
+### Circuit Breaker Pattern
+
+The circuit breaker prevents cascading failures by monitoring service health and temporarily blocking requests to unhealthy services.
+
+**States:**
+- **CLOSED**: Normal operation, requests allowed
+- **OPEN**: Too many failures detected, requests blocked
+- **HALF_OPEN**: Testing if service has recovered
+
+**Configuration:**
+- `failure_threshold`: 3 consecutive failures → OPEN
+- `timeout`: 60 seconds before attempting recovery
+- `success_threshold`: 2 consecutive successes → CLOSED
+
+### Background Monitoring
+
+The health checker runs as a background task that:
+1. Checks all services every 30 seconds
+2. Records response times and success/failure
+3. Updates circuit breaker states
+4. Calculates uptime percentages (last 100 checks)
+5. Stores detailed status for each service
+
+### Monitoring Data
+
+Each service health status includes:
+- **Status**: healthy, unhealthy, degraded, unknown
+- **Last Check**: Timestamp of last health check
+- **Response Time**: Milliseconds for health check
+- **Circuit State**: Current circuit breaker state
+- **Consecutive Failures**: Count of failures in a row
+- **Uptime Percentage**: Success rate over recent checks
+- **Error Details**: Specific error message if unhealthy
+
 ## Related Documentation
 
 - [Technical Proposal](/docs/pm/orchestrator/TECHNICAL-PROPOSAL-ORCHESTRATOR.md)
 - [PHI Agent Prompt](/.github/prompts/orchestrator/phi.md)
+- [CHI Agent Prompt](/.github/prompts/orchestrator/chi.md)
