@@ -21,6 +21,9 @@ from db import get_db_manager, ContentCRUD, SourceCRUD, ScrapeJobCRUD, VectorSea
 # Import enrichment engine
 from enrichment import EnrichmentEngine
 
+# Import aggregation module
+from aggregation import UnifiedTimeline
+
 # Load environment variables
 load_dotenv()
 
@@ -118,6 +121,35 @@ class HealthResponse(BaseModel):
     version: str = Field(..., description="API version")
     timestamp: datetime = Field(default_factory=datetime.utcnow, description="Current timestamp")
     components: Dict[str, str] = Field(default_factory=dict, description="Component health status")
+
+
+class TimelineRequest(BaseModel):
+    """Request model for unified timeline"""
+    platforms: Optional[List[str]] = Field(None, description="Platforms to include (twitter, youtube, reddit, web)")
+    limit: int = Field(50, ge=1, le=200, description="Maximum number of results")
+    offset: int = Field(0, ge=0, description="Pagination offset")
+    sort_by: str = Field("published_at", description="Sort field (published_at, scraped_at)")
+    sort_order: str = Field("desc", description="Sort order (asc, desc)")
+    deduplicate: bool = Field(True, description="Enable content deduplication")
+    similarity_threshold: float = Field(0.85, ge=0.0, le=1.0, description="Deduplication similarity threshold")
+
+
+class TimelineResponse(BaseModel):
+    """Response model for unified timeline"""
+    items: List[Dict[str, Any]] = Field(default_factory=list, description="Timeline items")
+    total: int = Field(..., description="Total items available")
+    count: int = Field(..., description="Items in this response")
+    platforms: List[str] = Field(default_factory=list, description="Platforms included")
+    deduplicated_count: int = Field(0, description="Number of duplicates removed")
+    pagination: Dict[str, Any] = Field(default_factory=dict, description="Pagination info")
+
+
+class PlatformStatisticsResponse(BaseModel):
+    """Response model for platform statistics"""
+    platforms: List[Dict[str, Any]] = Field(default_factory=list, description="Per-platform statistics")
+    total_content: int = Field(..., description="Total content items across all platforms")
+    total_sources: int = Field(..., description="Total unique sources")
+    total_authors: int = Field(..., description="Total unique authors")
 
 
 # ============================================================================
@@ -299,6 +331,156 @@ async def trigger_scrape(request: ScrapeRequest):
     )
 
 
+@app.get("/api/timeline", response_model=TimelineResponse, tags=["Aggregation"])
+async def get_unified_timeline(
+    platforms: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    sort_by: str = "published_at",
+    sort_order: str = "desc",
+    deduplicate: bool = True,
+    similarity_threshold: float = 0.85
+):
+    """
+    Get unified timeline across multiple platforms
+
+    Combines content from Twitter, YouTube, Reddit, and other platforms into a single
+    chronological view with optional deduplication.
+
+    **CHI-2 Multi-Source Aggregation Feature**
+
+    - **platforms**: Comma-separated list of platforms (e.g., "twitter,youtube,reddit")
+    - **limit**: Maximum results to return (1-200)
+    - **offset**: Pagination offset
+    - **sort_by**: Sort field (published_at, scraped_at)
+    - **sort_order**: Sort order (asc, desc)
+    - **deduplicate**: Enable intelligent deduplication using embeddings
+    - **similarity_threshold**: Similarity threshold for deduplication (0.0-1.0)
+
+    Returns unified timeline with metadata about platforms and deduplication.
+    """
+    logger.info(f"Timeline requested: platforms={platforms}, limit={limit}, deduplicate={deduplicate}")
+
+    try:
+        # Parse platforms parameter
+        platform_list = None
+        if platforms:
+            platform_list = [p.strip() for p in platforms.split(",") if p.strip()]
+
+        # Get database manager
+        db_manager = get_db_manager()
+
+        # Create timeline aggregator
+        timeline = UnifiedTimeline(db_manager)
+
+        # Get timeline data
+        result = await timeline.get_timeline(
+            platforms=platform_list,
+            limit=limit,
+            offset=offset,
+            sort_by=sort_by,
+            sort_order=sort_order,
+            deduplicate=deduplicate,
+            similarity_threshold=similarity_threshold
+        )
+
+        logger.info(
+            f"Timeline returned: {result['count']} items from {len(result['platforms'])} platforms "
+            f"(deduplicated: {result['deduplicated_count']})"
+        )
+
+        return TimelineResponse(**result)
+
+    except Exception as e:
+        logger.error(f"Timeline request failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Timeline aggregation failed: {str(e)}"
+        )
+
+
+@app.get("/api/timeline/statistics", response_model=PlatformStatisticsResponse, tags=["Aggregation"])
+async def get_platform_statistics():
+    """
+    Get platform statistics
+
+    Returns statistics about available content across all platforms including:
+    - Content counts per platform
+    - Source and author counts
+    - Average word counts
+    - Publication date ranges
+
+    **CHI-2 Multi-Source Aggregation Feature**
+    """
+    logger.info("Platform statistics requested")
+
+    try:
+        db_manager = get_db_manager()
+        timeline = UnifiedTimeline(db_manager)
+
+        statistics = await timeline.get_platform_statistics()
+
+        logger.info(f"Statistics: {len(statistics['platforms'])} platforms, {statistics['total_content']} total items")
+
+        return PlatformStatisticsResponse(**statistics)
+
+    except Exception as e:
+        logger.error(f"Statistics request failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve statistics: {str(e)}"
+        )
+
+
+@app.get("/api/timeline/author/{author}", response_model=TimelineResponse, tags=["Aggregation"])
+async def get_author_timeline(
+    author: str,
+    platforms: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0
+):
+    """
+    Get timeline filtered by author
+
+    Returns content from a specific author across multiple platforms.
+
+    **CHI-2 Multi-Source Aggregation Feature**
+
+    - **author**: Author name/username to filter by
+    - **platforms**: Optional comma-separated list of platforms
+    - **limit**: Maximum results
+    - **offset**: Pagination offset
+    """
+    logger.info(f"Author timeline requested: author={author}, platforms={platforms}")
+
+    try:
+        # Parse platforms parameter
+        platform_list = None
+        if platforms:
+            platform_list = [p.strip() for p in platforms.split(",") if p.strip()]
+
+        db_manager = get_db_manager()
+        timeline = UnifiedTimeline(db_manager)
+
+        result = await timeline.filter_by_author(
+            author=author,
+            platforms=platform_list,
+            limit=limit,
+            offset=offset
+        )
+
+        logger.info(f"Author timeline: {result['count']} items for {author}")
+
+        return TimelineResponse(**result)
+
+    except Exception as e:
+        logger.error(f"Author timeline request failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve author timeline: {str(e)}"
+        )
+
+
 @app.get("/", tags=["Root"])
 async def root():
     """
@@ -314,6 +496,9 @@ async def root():
         "endpoints": {
             "enrich": "POST /api/enrich",
             "scrape": "POST /api/scrape",
+            "timeline": "GET /api/timeline",
+            "timeline_statistics": "GET /api/timeline/statistics",
+            "author_timeline": "GET /api/timeline/author/{author}",
         }
     }
 
