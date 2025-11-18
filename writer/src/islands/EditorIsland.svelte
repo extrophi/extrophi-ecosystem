@@ -8,6 +8,8 @@
   import { defaultKeymap } from '@codemirror/commands';
   import { debounce } from 'lodash-es';
   import { scanText, type PrivacyMatch, type PrivacyLevel } from '../lib/privacy-rules';
+  import { marked } from 'marked';
+  import hljs from 'highlight.js';
 
   // Props using Svelte 5 runes
   let {
@@ -35,6 +37,18 @@
   // Privacy scanning state
   let privacyMatches = $state<PrivacyMatch[]>([]);
   let privacyLevel = $state<PrivacyLevel | null>(null);
+
+  // Markdown preview state
+  let showPreview = $state(false);
+  let previewHtml = $state('');
+  let previewContainer: HTMLDivElement | undefined;
+  let editorScroller: HTMLElement | null = null;
+
+  // Configure marked with GFM and line breaks
+  marked.setOptions({
+    breaks: true,
+    gfm: true,
+  });
 
   // Derived state for privacy badge
   let privacyBadgeColor = $derived(() => {
@@ -123,6 +137,76 @@
   }
 
   /**
+   * Render markdown to HTML with syntax highlighting
+   */
+  function renderMarkdown(text: string): void {
+    try {
+      let html = marked.parse(text) as string;
+
+      // Apply syntax highlighting to code blocks
+      // Create a temporary div to parse the HTML
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = html;
+
+      // Find all code blocks and highlight them
+      const codeBlocks = tempDiv.querySelectorAll('pre code');
+      codeBlocks.forEach((block) => {
+        const codeElement = block as HTMLElement;
+        const language = Array.from(codeElement.classList)
+          .find(cls => cls.startsWith('language-'))
+          ?.replace('language-', '');
+
+        if (language && hljs.getLanguage(language)) {
+          try {
+            const result = hljs.highlight(codeElement.textContent || '', { language });
+            codeElement.innerHTML = result.value;
+            codeElement.classList.add('hljs');
+          } catch (err) {
+            console.error('Highlighting error:', err);
+          }
+        } else {
+          // Auto-detect language
+          const result = hljs.highlightAuto(codeElement.textContent || '');
+          codeElement.innerHTML = result.value;
+          codeElement.classList.add('hljs');
+        }
+      });
+
+      previewHtml = tempDiv.innerHTML;
+    } catch (err) {
+      console.error('Markdown parsing error:', err);
+      previewHtml = '<p>Error parsing markdown</p>';
+    }
+  }
+
+  /**
+   * Toggle preview mode
+   */
+  function togglePreview(): void {
+    showPreview = !showPreview;
+    if (showPreview && editorView) {
+      // Render current content
+      const content = editorView.state.doc.toString();
+      renderMarkdown(content);
+    }
+  }
+
+  /**
+   * Handle scroll sync between editor and preview
+   */
+  function handleEditorScroll(): void {
+    if (!showPreview || !editorScroller || !previewContainer) return;
+
+    const scrollPercentage = editorScroller.scrollTop / (editorScroller.scrollHeight - editorScroller.clientHeight);
+    previewContainer.scrollTop = scrollPercentage * (previewContainer.scrollHeight - previewContainer.clientHeight);
+  }
+
+  /**
+   * Debounced scroll handler
+   */
+  const debouncedScrollHandler = debounce(handleEditorScroll, 10);
+
+  /**
    * Handle content changes
    */
   function handleContentChange(content: string): void {
@@ -131,6 +215,11 @@
 
     // Trigger auto-save
     autoSave(content);
+
+    // Update markdown preview if enabled
+    if (showPreview) {
+      renderMarkdown(content);
+    }
   }
 
   /**
@@ -212,8 +301,19 @@
       parent: editorContainer,
     });
 
+    // Get editor scroller for scroll sync
+    editorScroller = editorContainer.querySelector('.cm-scroller');
+    if (editorScroller) {
+      editorScroller.addEventListener('scroll', debouncedScrollHandler);
+    }
+
     // Initial privacy scan
     updatePrivacyScanning(initialContent);
+
+    // Initial markdown render if preview is enabled
+    if (showPreview) {
+      renderMarkdown(initialContent);
+    }
   }
 
   /**
@@ -224,8 +324,13 @@
       editorView.destroy();
       editorView = null;
     }
-    // Cancel pending auto-saves
+    // Remove scroll listener
+    if (editorScroller) {
+      editorScroller.removeEventListener('scroll', debouncedScrollHandler);
+    }
+    // Cancel pending auto-saves and scroll handlers
     autoSave.cancel();
+    debouncedScrollHandler.cancel();
   }
 
   // Lifecycle: Initialize editor on mount
@@ -246,6 +351,13 @@
       {#if enableVim}
         <span class="vim-hint">Press 'i' to insert, 'Esc' for normal mode</span>
       {/if}
+      <button class="preview-toggle" class:active={showPreview} onclick={togglePreview} type="button">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+          <circle cx="12" cy="12" r="3"></circle>
+        </svg>
+        <span>{showPreview ? 'Hide Preview' : 'Show Preview'}</span>
+      </button>
     </div>
     <div class="editor-status">
       <div class="privacy-badge" data-level={privacyBadgeColor()}>
@@ -268,7 +380,19 @@
     </div>
   </div>
 
-  <div class="editor-container" bind:this={editorContainer}></div>
+  <div class="editor-content" class:split-view={showPreview}>
+    <div class="editor-pane">
+      <div class="editor-container" bind:this={editorContainer}></div>
+    </div>
+
+    {#if showPreview}
+      <div class="preview-pane">
+        <div class="preview-container" bind:this={previewContainer}>
+          {@html previewHtml}
+        </div>
+      </div>
+    {/if}
+  </div>
 
   {#if errorMessage}
     <div class="error-message">
@@ -350,6 +474,43 @@
     font-style: italic;
   }
 
+  .preview-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #666;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .preview-toggle:hover {
+    background: #f6f8fa;
+    border-color: #d0d0d0;
+    color: #333;
+  }
+
+  .preview-toggle.active {
+    background: #0366d6;
+    border-color: #0366d6;
+    color: #ffffff;
+  }
+
+  .preview-toggle.active:hover {
+    background: #0256c2;
+    border-color: #0256c2;
+  }
+
+  .preview-toggle svg {
+    width: 16px;
+    height: 16px;
+  }
+
   .editor-status {
     display: flex;
     align-items: center;
@@ -406,10 +567,265 @@
     color: #c62828;
   }
 
-  .editor-container {
+  .editor-content {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .editor-content.split-view {
+    gap: 1px;
+  }
+
+  .editor-pane {
     flex: 1;
     overflow: auto;
     position: relative;
+  }
+
+  .editor-content:not(.split-view) .editor-pane {
+    flex: 1;
+  }
+
+  .editor-container {
+    height: 100%;
+    overflow: auto;
+    position: relative;
+  }
+
+  .preview-pane {
+    flex: 1;
+    overflow: auto;
+    background: #ffffff;
+    border-left: 1px solid #e0e0e0;
+  }
+
+  .preview-container {
+    padding: 16px;
+    height: 100%;
+    overflow-y: auto;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+    line-height: 1.6;
+    color: #333;
+  }
+
+  /* Markdown preview styles */
+  .preview-container :global(h1),
+  .preview-container :global(h2),
+  .preview-container :global(h3),
+  .preview-container :global(h4),
+  .preview-container :global(h5),
+  .preview-container :global(h6) {
+    margin-top: 24px;
+    margin-bottom: 16px;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+
+  .preview-container :global(h1) {
+    font-size: 2em;
+    border-bottom: 1px solid #e0e0e0;
+    padding-bottom: 0.3em;
+  }
+
+  .preview-container :global(h2) {
+    font-size: 1.5em;
+    border-bottom: 1px solid #e0e0e0;
+    padding-bottom: 0.3em;
+  }
+
+  .preview-container :global(h3) {
+    font-size: 1.25em;
+  }
+
+  .preview-container :global(h4) {
+    font-size: 1em;
+  }
+
+  .preview-container :global(h5) {
+    font-size: 0.875em;
+  }
+
+  .preview-container :global(h6) {
+    font-size: 0.85em;
+    color: #666;
+  }
+
+  .preview-container :global(p) {
+    margin-top: 0;
+    margin-bottom: 16px;
+  }
+
+  .preview-container :global(a) {
+    color: #0366d6;
+    text-decoration: none;
+  }
+
+  .preview-container :global(a:hover) {
+    text-decoration: underline;
+  }
+
+  .preview-container :global(code) {
+    background: #f6f8fa;
+    padding: 0.2em 0.4em;
+    border-radius: 3px;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+    font-size: 85%;
+  }
+
+  .preview-container :global(pre) {
+    background: #f6f8fa;
+    padding: 16px;
+    border-radius: 6px;
+    overflow-x: auto;
+    margin-bottom: 16px;
+  }
+
+  .preview-container :global(pre code) {
+    background: transparent;
+    padding: 0;
+    font-size: 100%;
+  }
+
+  .preview-container :global(blockquote) {
+    margin: 0 0 16px 0;
+    padding: 0 1em;
+    color: #666;
+    border-left: 4px solid #e0e0e0;
+  }
+
+  .preview-container :global(ul),
+  .preview-container :global(ol) {
+    margin-bottom: 16px;
+    padding-left: 2em;
+  }
+
+  .preview-container :global(li) {
+    margin-bottom: 4px;
+  }
+
+  .preview-container :global(table) {
+    border-collapse: collapse;
+    width: 100%;
+    margin-bottom: 16px;
+  }
+
+  .preview-container :global(table th),
+  .preview-container :global(table td) {
+    padding: 6px 13px;
+    border: 1px solid #e0e0e0;
+  }
+
+  .preview-container :global(table th) {
+    font-weight: 600;
+    background: #f6f8fa;
+  }
+
+  .preview-container :global(table tr:nth-child(2n)) {
+    background: #f6f8fa;
+  }
+
+  .preview-container :global(img) {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .preview-container :global(hr) {
+    height: 0.25em;
+    padding: 0;
+    margin: 24px 0;
+    background-color: #e0e0e0;
+    border: 0;
+  }
+
+  /* Syntax highlighting (highlight.js default styles) */
+  .preview-container :global(.hljs) {
+    display: block;
+    overflow-x: auto;
+    padding: 0.5em;
+    background: #f6f8fa;
+  }
+
+  .preview-container :global(.hljs-comment),
+  .preview-container :global(.hljs-quote) {
+    color: #6a737d;
+    font-style: italic;
+  }
+
+  .preview-container :global(.hljs-keyword),
+  .preview-container :global(.hljs-selector-tag),
+  .preview-container :global(.hljs-subst) {
+    color: #d73a49;
+    font-weight: bold;
+  }
+
+  .preview-container :global(.hljs-number),
+  .preview-container :global(.hljs-literal),
+  .preview-container :global(.hljs-variable),
+  .preview-container :global(.hljs-template-variable),
+  .preview-container :global(.hljs-tag .hljs-attr) {
+    color: #005cc5;
+  }
+
+  .preview-container :global(.hljs-string),
+  .preview-container :global(.hljs-doctag) {
+    color: #032f62;
+  }
+
+  .preview-container :global(.hljs-title),
+  .preview-container :global(.hljs-section),
+  .preview-container :global(.hljs-selector-id) {
+    color: #6f42c1;
+    font-weight: bold;
+  }
+
+  .preview-container :global(.hljs-type),
+  .preview-container :global(.hljs-class .hljs-title) {
+    color: #d73a49;
+    font-weight: bold;
+  }
+
+  .preview-container :global(.hljs-tag),
+  .preview-container :global(.hljs-name),
+  .preview-container :global(.hljs-attribute) {
+    color: #22863a;
+    font-weight: normal;
+  }
+
+  .preview-container :global(.hljs-regexp),
+  .preview-container :global(.hljs-link) {
+    color: #032f62;
+  }
+
+  .preview-container :global(.hljs-symbol),
+  .preview-container :global(.hljs-bullet) {
+    color: #e36209;
+  }
+
+  .preview-container :global(.hljs-built_in),
+  .preview-container :global(.hljs-builtin-name) {
+    color: #005cc5;
+  }
+
+  .preview-container :global(.hljs-meta) {
+    color: #6a737d;
+  }
+
+  .preview-container :global(.hljs-deletion) {
+    background: #ffeef0;
+  }
+
+  .preview-container :global(.hljs-addition) {
+    background: #e6ffed;
+  }
+
+  .preview-container :global(.hljs-emphasis) {
+    font-style: italic;
+  }
+
+  .preview-container :global(.hljs-strong) {
+    font-weight: bold;
   }
 
   .error-message {
