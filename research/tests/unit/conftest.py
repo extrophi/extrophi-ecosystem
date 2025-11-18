@@ -58,7 +58,8 @@ def sample_youtube_data() -> dict[str, Any]:
     return {
         "video_id": "dQw4w9WgXcQ",
         "title": "Test Video",
-        "transcript": [
+        "transcript": "Never gonna give you up Never gonna let you down",
+        "segments": [
             {"text": "Never gonna give you up", "start": 0.0, "duration": 2.0},
             {"text": "Never gonna let you down", "start": 2.0, "duration": 2.0},
         ],

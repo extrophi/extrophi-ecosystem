@@ -103,6 +103,7 @@ class WebScraper(BaseScraper):
                     "url": target,
                     "title": None,
                     "content": "",
+                    "content_type": "markdown",
                     "error": str(e),
                     "extracted_at": datetime.utcnow().isoformat(),
                 }
