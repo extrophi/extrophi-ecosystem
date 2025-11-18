@@ -1,0 +1,119 @@
+{
+  "name": "Extrophi API",
+  "logo": {
+    "dark": "/logo/dark.svg",
+    "light": "/logo/light.svg"
+  },
+  "favicon": "/favicon.svg",
+  "colors": {
+    "primary": "#0D9373",
+    "light": "#07C983",
+    "dark": "#0D9373",
+    "anchors": {
+      "from": "#0D9373",
+      "to": "#07C983"
+    }
+  },
+  "topbarLinks": [
+    {
+      "name": "Support",
+      "url": "https://github.com/extrophi/extrophi-ecosystem/issues"
+    }
+  ],
+  "topbarCtaButton": {
+    "name": "Dashboard",
+    "url": "https://app.extrophi.ai"
+  },
+  "tabs": [
+    {
+      "name": "API Reference",
+      "url": "api-reference"
+    },
+    {
+      "name": "SDKs",
+      "url": "sdks"
+    }
+  ],
+  "anchors": [
+    {
+      "name": "GitHub",
+      "icon": "github",
+      "url": "https://github.com/extrophi/extrophi-ecosystem"
+    },
+    {
+      "name": "Community",
+      "icon": "discord",
+      "url": "https://discord.gg/extrophi"
+    }
+  ],
+  "navigation": [
+    {
+      "group": "Get Started",
+      "pages": [
+        "introduction",
+        "quickstart",
+        "authentication"
+      ]
+    },
+    {
+      "group": "Health & Status",
+      "pages": [
+        "api-reference/endpoints/get-health"
+      ]
+    },
+    {
+      "group": "Content Scraping",
+      "pages": [
+        "api-reference/endpoints/post-scrape-platform"
+      ]
+    },
+    {
+      "group": "Content Analysis",
+      "pages": [
+        "api-reference/endpoints/post-analyze-content"
+      ]
+    },
+    {
+      "group": "RAG & Search",
+      "pages": [
+        "api-reference/endpoints/post-query-rag"
+      ]
+    },
+    {
+      "group": "Publishing",
+      "pages": [
+        "api-reference/endpoints/post-publish"
+      ]
+    },
+    {
+      "group": "Attributions",
+      "pages": [
+        "api-reference/endpoints/post-attributions",
+        "api-reference/endpoints/get-attributions-card_id"
+      ]
+    },
+    {
+      "group": "Token System",
+      "pages": [
+        "api-reference/endpoints/get-tokens-balance-user_id",
+        "api-reference/endpoints/post-tokens-transfer"
+      ]
+    },
+    {
+      "group": "Content Enrichment",
+      "pages": [
+        "api-reference/endpoints/post-api-enrich"
+      ]
+    }
+  ],
+  "footerSocials": {
+    "github": "https://github.com/extrophi",
+    "twitter": "https://twitter.com/extrophi"
+  },
+  "api": {
+    "baseUrl": "https://api.extrophi.ai",
+    "auth": {
+      "method": "bearer"
+    }
+  }
+}
