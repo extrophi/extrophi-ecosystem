@@ -12,6 +12,8 @@ import httpx
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
+from orchestrator.monitoring import HealthChecker
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -21,9 +23,17 @@ async def lifespan(app: FastAPI):
     print(f"Configured services: {SERVICES}")
     print(f"Request timeout: {REQUEST_TIMEOUT}s")
     print(f"Max retries: {MAX_RETRIES}")
+
+    # Start health monitoring
+    await health_checker.start()
+
     yield
+
     # Shutdown
     print("Orchestrator API Gateway shutting down...")
+
+    # Stop health monitoring
+    await health_checker.stop()
 
 
 # Service Configuration (must be defined before lifespan reference)
@@ -37,6 +47,13 @@ SERVICES = {
 REQUEST_TIMEOUT = 30.0  # 30 seconds
 MAX_RETRIES = 3
 RETRY_DELAY = 1.0  # 1 second between retries
+
+# Health Monitoring
+health_checker = HealthChecker(
+    check_interval=30,  # Check every 30 seconds
+    timeout=5.0,  # 5 second timeout for health checks
+    max_history=100,  # Keep last 100 checks for uptime calculation
+)
 
 app = FastAPI(
     title="Extrophi Orchestrator",
@@ -270,5 +287,48 @@ async def check_service_health(service_name: str, service_url: str) -> Dict[str,
             "error": f"Unexpected error: {str(e)}",
             "url": service_url,
         }
+
+
+@app.get("/health/status")
+async def get_health_status():
+    """Get detailed health status from the monitoring system.
+
+    This endpoint returns the aggregated health status collected by the
+    background health checker, including:
+    - Overall system status
+    - Individual service statuses
+    - Circuit breaker states
+    - Response times
+    - Uptime percentages
+    - Recent check history
+
+    The data is updated every 30 seconds by the background monitoring task.
+
+    Returns:
+        Comprehensive health status including all monitored services
+    """
+    return health_checker.get_status()
+
+
+@app.get("/health/status/{service_name}")
+async def get_service_health_status(service_name: str):
+    """Get health status for a specific service.
+
+    Args:
+        service_name: Name of the service (writer, research, or backend)
+
+    Returns:
+        Health status for the requested service
+
+    Raises:
+        HTTPException: If service name is not found
+    """
+    status = health_checker.get_service_status(service_name)
+    if status is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Service '{service_name}' not found. Available services: {list(health_checker.services.keys())}",
+        )
+    return status
 
 
