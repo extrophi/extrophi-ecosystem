@@ -1,0 +1,171 @@
+{
+  "app": {
+    "title": "BrainDump",
+    "version": "v3.0 - プライバシー重視の音声日記"
+  },
+  "common": {
+    "save": "保存",
+    "cancel": "キャンセル",
+    "delete": "削除",
+    "edit": "編集",
+    "close": "閉じる",
+    "confirm": "確認",
+    "copy": "コピー",
+    "export": "エクスポート",
+    "test": "テスト",
+    "loading": "読み込み中...",
+    "ready": "準備完了",
+    "error": "エラー",
+    "success": "成功",
+    "retry": "再試行",
+    "search": "検索",
+    "new": "新規"
+  },
+  "recording": {
+    "startRecording": "録音を開始",
+    "stopRecording": "録音を停止",
+    "recording": "録音中",
+    "transcribing": "文字起こし中...",
+    "clickToStart": "クリックして録音を開始",
+    "clickToStop": "ボタンをクリックして停止",
+    "processingAudio": "音声を処理中",
+    "pressButton": "録音ボタンを押して音声の録音を開始",
+    "transcriptionWillAppear": "文字起こしがここに表示されます",
+    "noSpeechDetected": "音声が検出されませんでした。はっきりと話してもう一度お試しください。",
+    "recordingTime": "録音時間"
+  },
+  "status": {
+    "ready": "準備完了",
+    "loading": "Whisperモデルを読み込み中...",
+    "modelLoading": "最大30秒かかる場合があります",
+    "modelError": "モデルの読み込みに失敗しました",
+    "transcribing": "文字起こし中...",
+    "recording": "録音中"
+  },
+  "session": {
+    "title": "セッション",
+    "newSession": "新しいセッション",
+    "currentSession": "現在のセッション",
+    "noSession": "セッションが選択されていません",
+    "createToStart": "新しいセッションを作成してチャットを開始",
+    "untitled": "無題のセッション",
+    "deleteConfirm": "セッション'{title}'を削除しますか？この操作は元に戻せません。",
+    "renameSession": "セッション名を変更",
+    "sessionCreated": "セッションが作成されました！チャットの準備が整いました。",
+    "brainDump": "思考のダンプ"
+  },
+  "messages": {
+    "noMessages": "まだメッセージがありません",
+    "typePlaceholder": "メッセージを入力... (Shift+Enterで改行)",
+    "sendMessage": "メッセージを送信",
+    "userMessage": "あなた",
+    "assistantMessage": "アシスタント",
+    "sending": "送信中...",
+    "messageSent": "メッセージを送信しました",
+    "failedToSend": "メッセージの送信に失敗しました"
+  },
+  "settings": {
+    "title": "設定",
+    "provider": "AIプロバイダー",
+    "providerHelp": "会話に使用するAIサービスを選択",
+    "apiKeys": "APIキー",
+    "openaiKey": "OpenAI APIキー",
+    "claudeKey": "Claude APIキー",
+    "getKeyFrom": "キーの取得先",
+    "keyConfigured": "キーが設定されました",
+    "keyInvalid": "キーが無効または未設定",
+    "testing": "テスト中...",
+    "connectionSuccess": "接続に成功しました！",
+    "connectionFailed": "接続に失敗しました",
+    "providerSaved": "プロバイダーの設定を保存しました",
+    "keySaved": "キーを保存しました",
+    "about": "について",
+    "allDataLocal": "すべてのデータはローカルに保存されます。APIキーはシステムのキーチェーンに保存されます。",
+    "openai": "OpenAI (GPT-4) - $0.15/100万トークン",
+    "claude": "Claude (Anthropic) - $3/100万トークン",
+    "language": "言語",
+    "selectLanguage": "お好みの言語を選択",
+    "languageChanged": "言語が正常に変更されました"
+  },
+  "privacy": {
+    "title": "プライバシー",
+    "scan": "プライバシースキャン",
+    "issues": "問題が見つかりました",
+    "noIssues": "プライバシーの問題は検出されませんでした",
+    "dangerLevel": "高リスク",
+    "cautionLevel": "中リスク"
+  },
+  "export": {
+    "exportSession": "セッションをエクスポート",
+    "exportSuccess": "エクスポート先: {path}",
+    "exportFailed": "エクスポートに失敗しました",
+    "exportAll": "すべてエクスポート"
+  },
+  "transcript": {
+    "title": "現在の文字起こし",
+    "sendToClaude": "Claudeに送信",
+    "copyTranscript": "文字起こしをコピー",
+    "empty": "録音ボタンを押して音声の録音を開始",
+    "hint": "文字起こしがここに表示されます"
+  },
+  "prompts": {
+    "title": "プロンプト",
+    "selectTemplate": "テンプレートを選択",
+    "manage": "プロンプトを管理",
+    "create": "プロンプトを作成",
+    "edit": "プロンプトを編集",
+    "delete": "プロンプトを削除",
+    "preview": "プレビュー",
+    "name": "名前",
+    "content": "内容",
+    "description": "説明"
+  },
+  "stats": {
+    "title": "統計",
+    "totalSessions": "総セッション数",
+    "totalMessages": "総メッセージ数",
+    "totalWords": "総単語数",
+    "apiUsage": "API使用状況"
+  },
+  "tabs": {
+    "chat": "チャット",
+    "transcript": "文字起こし",
+    "prompts": "プロンプト",
+    "statistics": "統計",
+    "settings": "設定"
+  },
+  "errors": {
+    "generic": "予期しないエラーが発生しました",
+    "microphonePermission": "マイクへのアクセスが拒否されました。システム設定 → プライバシーとセキュリティ → マイクを確認してください。",
+    "noMicrophone": "マイクが見つかりません。マイクを接続してもう一度お試しください。",
+    "alreadyRecording": "すでに録音中です。現在の録音を停止してください。",
+    "notRecording": "現在録音していません。",
+    "modelNotReady": "AIモデルがまだ読み込み中です。しばらくお待ちください...",
+    "timeout": "操作に時間がかかりすぎました。もう一度お試しください。",
+    "databaseBusy": "データベースがビジー状態です。他のBrainDumpウィンドウを閉じてもう一度お試しください。",
+    "insufficientSpace": "ディスク容量が不足しています。少なくとも100MBを解放してください。",
+    "sessionNotFound": "セッションが見つかりません",
+    "loadFailed": "読み込みに失敗しました",
+    "saveFailed": "保存に失敗しました",
+    "apiKeyRequired": "APIキーが必要です。設定で構成してください。",
+    "networkError": "ネットワークエラー。接続を確認してください。"
+  },
+  "shortcuts": {
+    "title": "キーボードショートカット",
+    "record": "録音 / 停止",
+    "newSession": "新しいセッション",
+    "search": "検索",
+    "settings": "設定",
+    "export": "セッションをエクスポート",
+    "help": "ショートカットを表示",
+    "chatView": "チャットビュー",
+    "transcriptView": "文字起こしビュー",
+    "promptsView": "プロンプトビュー",
+    "privacyView": "プライバシービュー"
+  },
+  "search": {
+    "placeholder": "文字起こしを検索...",
+    "noResults": "結果が見つかりません",
+    "searching": "検索中..."
+  }
+}

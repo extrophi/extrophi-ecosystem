@@ -1,0 +1,48 @@
+{
+  "productName": "BrainDump",
+  "version": "3.0.0",
+  "identifier": "com.iamcodio.braindump",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [],
+   "macOS": {
+  "minimumSystemVersion": "11.0",
+  "entitlements": "entitlements.plist",
+  "frameworks": [
+    "/opt/homebrew/Cellar/whisper-cpp/1.8.2/libexec/lib/libwhisper.1.dylib",
+    "/opt/homebrew/Cellar/whisper-cpp/1.8.2/libexec/lib/libggml.dylib",
+    "/opt/homebrew/Cellar/whisper-cpp/1.8.2/libexec/lib/libggml-base.dylib",
+    "/opt/homebrew/Cellar/whisper-cpp/1.8.2/libexec/lib/libggml-metal.dylib"
+  ]
+}
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "BrainDump V3.0",
+        "width": 800,
+        "height": 600
+      }
+    ],
+    "security": {
+      "csp": null,
+      "capabilities": ["main-capability"]
+    }
+  }
+}

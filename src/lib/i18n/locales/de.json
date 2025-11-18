@@ -1,0 +1,171 @@
+{
+  "app": {
+    "title": "BrainDump",
+    "version": "v3.0 - Datenschutzorientiertes Sprachtagebuch"
+  },
+  "common": {
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "delete": "Löschen",
+    "edit": "Bearbeiten",
+    "close": "Schließen",
+    "confirm": "Bestätigen",
+    "copy": "Kopieren",
+    "export": "Exportieren",
+    "test": "Testen",
+    "loading": "Lädt...",
+    "ready": "Bereit",
+    "error": "Fehler",
+    "success": "Erfolg",
+    "retry": "Wiederholen",
+    "search": "Suchen",
+    "new": "Neu"
+  },
+  "recording": {
+    "startRecording": "Aufnahme starten",
+    "stopRecording": "Aufnahme stoppen",
+    "recording": "Aufnahme",
+    "transcribing": "Transkribieren...",
+    "clickToStart": "Klicken Sie, um die Aufnahme zu starten",
+    "clickToStop": "Klicken Sie auf die Schaltfläche zum Stoppen",
+    "processingAudio": "Ihre Audiodaten werden verarbeitet",
+    "pressButton": "Drücken Sie die Aufnahmetaste, um Audio aufzunehmen",
+    "transcriptionWillAppear": "Ihre Transkription wird hier angezeigt",
+    "noSpeechDetected": "Keine Sprache erkannt. Bitte sprechen Sie deutlich und versuchen Sie es erneut.",
+    "recordingTime": "Aufnahmezeit"
+  },
+  "status": {
+    "ready": "Bereit",
+    "loading": "Whisper-Modell wird geladen...",
+    "modelLoading": "Dies kann bis zu 30 Sekunden dauern",
+    "modelError": "Fehler beim Laden des Modells",
+    "transcribing": "Transkribieren...",
+    "recording": "Aufnahme"
+  },
+  "session": {
+    "title": "Sitzungen",
+    "newSession": "Neue Sitzung",
+    "currentSession": "Aktuelle Sitzung",
+    "noSession": "Keine Sitzung ausgewählt",
+    "createToStart": "Erstellen Sie eine neue Sitzung, um mit dem Chatten zu beginnen",
+    "untitled": "Sitzung ohne Titel",
+    "deleteConfirm": "Sitzung '{title}' löschen? Dies kann nicht rückgängig gemacht werden.",
+    "renameSession": "Sitzung umbenennen",
+    "sessionCreated": "Sitzung erstellt! Bereit zum Chatten.",
+    "brainDump": "Gedankenablage"
+  },
+  "messages": {
+    "noMessages": "Noch keine Nachrichten",
+    "typePlaceholder": "Geben Sie Ihre Nachricht ein... (Shift+Enter für neue Zeile)",
+    "sendMessage": "Nachricht senden",
+    "userMessage": "Sie",
+    "assistantMessage": "Assistent",
+    "sending": "Wird gesendet...",
+    "messageSent": "Nachricht gesendet",
+    "failedToSend": "Fehler beim Senden der Nachricht"
+  },
+  "settings": {
+    "title": "Einstellungen",
+    "provider": "KI-Anbieter",
+    "providerHelp": "Wählen Sie den KI-Dienst für Konversationen",
+    "apiKeys": "API-Schlüssel",
+    "openaiKey": "OpenAI API-Schlüssel",
+    "claudeKey": "Claude API-Schlüssel",
+    "getKeyFrom": "Holen Sie sich Ihren Schlüssel von",
+    "keyConfigured": "Schlüssel konfiguriert",
+    "keyInvalid": "Schlüssel ungültig oder nicht konfiguriert",
+    "testing": "Wird getestet...",
+    "connectionSuccess": "Verbindung erfolgreich!",
+    "connectionFailed": "Verbindung fehlgeschlagen",
+    "providerSaved": "Anbieter-Präferenz gespeichert",
+    "keySaved": "Schlüssel gespeichert",
+    "about": "Über",
+    "allDataLocal": "Alle Daten werden lokal gespeichert. API-Schlüssel werden im System-Schlüsselbund gespeichert.",
+    "openai": "OpenAI (GPT-4) - 0,15$/1M Token",
+    "claude": "Claude (Anthropic) - 3$/1M Token",
+    "language": "Sprache",
+    "selectLanguage": "Wählen Sie Ihre bevorzugte Sprache",
+    "languageChanged": "Sprache erfolgreich geändert"
+  },
+  "privacy": {
+    "title": "Datenschutz",
+    "scan": "Datenschutz-Scan",
+    "issues": "Probleme gefunden",
+    "noIssues": "Keine Datenschutzprobleme erkannt",
+    "dangerLevel": "Hohes Risiko",
+    "cautionLevel": "Mittleres Risiko"
+  },
+  "export": {
+    "exportSession": "Sitzung exportieren",
+    "exportSuccess": "Exportiert nach: {path}",
+    "exportFailed": "Export fehlgeschlagen",
+    "exportAll": "Alle exportieren"
+  },
+  "transcript": {
+    "title": "Aktuelle Transkription",
+    "sendToClaude": "An Claude senden",
+    "copyTranscript": "Transkription kopieren",
+    "empty": "Drücken Sie die Aufnahmetaste, um Audio aufzunehmen",
+    "hint": "Ihre Transkription wird hier angezeigt"
+  },
+  "prompts": {
+    "title": "Vorlagen",
+    "selectTemplate": "Vorlage auswählen",
+    "manage": "Vorlagen verwalten",
+    "create": "Vorlage erstellen",
+    "edit": "Vorlage bearbeiten",
+    "delete": "Vorlage löschen",
+    "preview": "Vorschau",
+    "name": "Name",
+    "content": "Inhalt",
+    "description": "Beschreibung"
+  },
+  "stats": {
+    "title": "Statistiken",
+    "totalSessions": "Gesamte Sitzungen",
+    "totalMessages": "Gesamte Nachrichten",
+    "totalWords": "Gesamte Wörter",
+    "apiUsage": "API-Nutzung"
+  },
+  "tabs": {
+    "chat": "Chat",
+    "transcript": "Transkription",
+    "prompts": "Vorlagen",
+    "statistics": "Statistiken",
+    "settings": "Einstellungen"
+  },
+  "errors": {
+    "generic": "Ein unerwarteter Fehler ist aufgetreten",
+    "microphonePermission": "Mikrofonzugriff verweigert. Bitte überprüfen Sie Systemeinstellungen → Datenschutz & Sicherheit → Mikrofon.",
+    "noMicrophone": "Kein Mikrofon gefunden. Bitte schließen Sie ein Mikrofon an und versuchen Sie es erneut.",
+    "alreadyRecording": "Aufnahme läuft bereits. Bitte stoppen Sie zuerst die aktuelle Aufnahme.",
+    "notRecording": "Derzeit keine Aufnahme.",
+    "modelNotReady": "KI-Modell wird noch geladen. Bitte warten Sie einen Moment...",
+    "timeout": "Vorgang dauerte zu lange. Bitte versuchen Sie es erneut.",
+    "databaseBusy": "Datenbank ist beschäftigt. Bitte schließen Sie andere BrainDump-Fenster und versuchen Sie es erneut.",
+    "insufficientSpace": "Nicht genügend Speicherplatz. Bitte geben Sie mindestens 100MB frei.",
+    "sessionNotFound": "Sitzung nicht gefunden",
+    "loadFailed": "Laden fehlgeschlagen",
+    "saveFailed": "Speichern fehlgeschlagen",
+    "apiKeyRequired": "API-Schlüssel erforderlich. Bitte in den Einstellungen konfigurieren.",
+    "networkError": "Netzwerkfehler. Bitte überprüfen Sie Ihre Verbindung."
+  },
+  "shortcuts": {
+    "title": "Tastaturkürzel",
+    "record": "Aufnehmen / Stoppen",
+    "newSession": "Neue Sitzung",
+    "search": "Suchen",
+    "settings": "Einstellungen",
+    "export": "Sitzung exportieren",
+    "help": "Tastaturkürzel anzeigen",
+    "chatView": "Chat-Ansicht",
+    "transcriptView": "Transkriptions-Ansicht",
+    "promptsView": "Vorlagen-Ansicht",
+    "privacyView": "Datenschutz-Ansicht"
+  },
+  "search": {
+    "placeholder": "Transkriptionen durchsuchen...",
+    "noResults": "Keine Ergebnisse gefunden",
+    "searching": "Suche..."
+  }
+}
