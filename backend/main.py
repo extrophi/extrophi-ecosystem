@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from backend.api.middleware.cors import setup_cors
 from backend.api.routes import (
     analyze_router,
+    api_keys_router,
     health_router,
     query_router,
     scrape_router,
@@ -23,6 +24,7 @@ app.include_router(health_router)
 app.include_router(scrape_router)
 app.include_router(analyze_router)
 app.include_router(query_router)
+app.include_router(api_keys_router)
 
 
 @app.get("/")
