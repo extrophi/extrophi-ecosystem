@@ -1385,3 +1385,102 @@ pub async fn set_language_preference(
 
     Ok(())
 }
+
+// ========== Git Publish Commands (Wave 2 - ZETA) ==========
+
+use braindump::{GitPublisher, PublishResult, PublishStatus};
+use std::path::PathBuf;
+
+/// Initialize Git repository for publishing
+#[tauri::command]
+pub async fn git_init_repository(repo_path: String) -> Result<(), BrainDumpError> {
+    braindump::logging::info("Git", &format!("Initializing repository at: {}", repo_path));
+
+    let publisher = GitPublisher::new(repo_path);
+    publisher.initialize_repository()?;
+
+    braindump::logging::info("Git", "Repository initialized successfully");
+    Ok(())
+}
+
+/// Get publish status (publishable card count, last publish time, etc.)
+#[tauri::command]
+pub async fn git_get_publish_status(
+    repo_path: String,
+    state: State<'_, AppState>,
+) -> Result<PublishStatus, BrainDumpError> {
+    braindump::logging::info("Git", "Getting publish status");
+
+    let publisher = GitPublisher::new(repo_path);
+    let db = state.db.lock();
+    let status = publisher.get_status(&db)?;
+
+    Ok(status)
+}
+
+/// Publish cards to Git repository
+#[tauri::command]
+pub async fn git_publish_cards(
+    repo_path: String,
+    commit_message: String,
+    should_push: bool,
+    remote_name: String,
+    branch: String,
+    state: State<'_, AppState>,
+) -> Result<PublishResult, BrainDumpError> {
+    braindump::logging::info(
+        "Git",
+        &format!("Publishing cards (push: {})", should_push),
+    );
+
+    // Get all cards from database
+    let db = state.db.lock();
+    let cards = db
+        .get_publishable_cards(10000)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+
+    drop(db); // Release lock before git operations
+
+    braindump::logging::info("Git", &format!("Found {} publishable cards", cards.len()));
+
+    // Publish cards
+    let publisher = GitPublisher::new(repo_path);
+    let result = publisher.publish_cards(
+        &cards,
+        &commit_message,
+        should_push,
+        &remote_name,
+        &branch,
+    )?;
+
+    // Update published status in database
+    let db = state.db.lock();
+    for card in cards {
+        if let Some(card_id) = card.id {
+            let _ = db.publish_card(card_id, &result.commit_sha);
+        }
+    }
+
+    braindump::logging::info(
+        "Git",
+        &format!(
+            "Published {} cards, commit: {}",
+            result.cards_published, result.commit_sha
+        ),
+    );
+
+    Ok(result)
+}
+
+/// Get count of publishable cards (BUSINESS + IDEAS only)
+#[tauri::command]
+pub async fn git_get_publishable_count(state: State<'_, AppState>) -> Result<usize, BrainDumpError> {
+    braindump::logging::info("Git", "Getting publishable card count");
+
+    let db = state.db.lock();
+    let cards = db
+        .get_publishable_cards(10000)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+
+    Ok(cards.len())
+}

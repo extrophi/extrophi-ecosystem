@@ -31,6 +31,7 @@ reqwest = { version = "0.12", features = ["json", "stream"] }
 futures-util = "0.3"
 keyring = "2.3"
 dotenv = "0.15"
+git2 = "0.19"
 
 [build-dependencies]
 tauri-build = { version = "2.5", features = [] }
