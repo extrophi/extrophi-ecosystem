@@ -1,0 +1,99 @@
+---
+import AdminLayout from '../layouts/AdminLayout.astro';
+import DataTable from '$lib/components/DataTable.svelte';
+
+// Mock data - in production fetch from API
+const users = [
+  {
+    id: '1',
+    email: 'john.doe@example.com',
+    full_name: 'John Doe',
+    tenant: 'Acme Corp',
+    status: 'Active',
+    created_at: '2025-06-01',
+  },
+  {
+    id: '2',
+    email: 'jane.smith@example.com',
+    full_name: 'Jane Smith',
+    tenant: 'TechStart Inc',
+    status: 'Active',
+    created_at: '2025-06-05',
+  },
+  {
+    id: '3',
+    email: 'bob.wilson@example.com',
+    full_name: 'Bob Wilson',
+    tenant: 'Acme Corp',
+    status: 'Inactive',
+    created_at: '2025-05-28',
+  },
+];
+
+const columns = [
+  { key: 'email', header: 'Email' },
+  { key: 'full_name', header: 'Name' },
+  { key: 'tenant', header: 'Tenant' },
+  { 
+    key: 'status', 
+    header: 'Status',
+    cell: (value: string) => value
+  },
+  { key: 'created_at', header: 'Created' },
+];
+---
+
+<AdminLayout title="Users">
+  <div class="p-8">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h1 class="text-3xl font-bold">Users</h1>
+        <p class="text-muted-foreground">Manage platform users and permissions</p>
+      </div>
+      <button class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2">
+        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+        </svg>
+        Add User
+      </button>
+    </div>
+
+    <!-- Filters -->
+    <div class="flex gap-4 mb-6">
+      <input
+        type="text"
+        placeholder="Search users..."
+        class="flex h-10 w-full max-w-sm rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+      />
+      <select class="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+        <option value="">All Tenants</option>
+        <option value="acme">Acme Corp</option>
+        <option value="techstart">TechStart Inc</option>
+      </select>
+      <select class="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">
+        <option value="">All Status</option>
+        <option value="active">Active</option>
+        <option value="inactive">Inactive</option>
+      </select>
+    </div>
+
+    <!-- Users Table -->
+    <DataTable client:load data={users} columns={columns} />
+
+    <!-- Pagination -->
+    <div class="flex items-center justify-between mt-6">
+      <p class="text-sm text-muted-foreground">
+        Showing 1 to 3 of 3 users
+      </p>
+      <div class="flex gap-2">
+        <button class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3" disabled>
+          Previous
+        </button>
+        <button class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-9 px-3" disabled>
+          Next
+        </button>
+      </div>
+    </div>
+  </div>
+</AdminLayout>

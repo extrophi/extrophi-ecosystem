@@ -1,0 +1,108 @@
+---
+import '../styles/global.css';
+---
+
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Login - Sovereign Admin</title>
+  </head>
+  <body class="min-h-screen bg-background text-foreground flex items-center justify-center">
+    <div class="w-full max-w-md">
+      <div class="rounded-lg border bg-card text-card-foreground shadow-sm">
+        <div class="p-6 space-y-6">
+          <!-- Header -->
+          <div class="space-y-2 text-center">
+            <h1 class="text-2xl font-bold">Welcome back</h1>
+            <p class="text-muted-foreground">Enter your credentials to access the admin dashboard</p>
+          </div>
+
+          <!-- Form -->
+          <form id="loginForm" class="space-y-4">
+            <div class="space-y-2">
+              <label for="email" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                Email
+              </label>
+              <input
+                id="email"
+                type="email"
+                placeholder="admin@example.com"
+                value="admin@example.com"
+                class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                required
+              />
+            </div>
+
+            <div class="space-y-2">
+              <label for="password" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                placeholder="••••••••"
+                value="admin"
+                class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                required
+              />
+            </div>
+
+            <button
+              type="submit"
+              class="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 w-full"
+            >
+              Sign In
+            </button>
+          </form>
+
+          <!-- Error message -->
+          <div id="error" class="hidden rounded-md bg-destructive/10 p-3 text-sm text-destructive"></div>
+
+          <!-- Footer -->
+          <div class="text-center text-sm text-muted-foreground">
+            Default credentials: admin@example.com / admin
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const form = document.getElementById('loginForm') as HTMLFormElement;
+      const errorDiv = document.getElementById('error') as HTMLDivElement;
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const email = (document.getElementById('email') as HTMLInputElement).value;
+        const password = (document.getElementById('password') as HTMLInputElement).value;
+
+        try {
+          const response = await fetch(`${import.meta.env.PUBLIC_API_URL}/auth/login`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+              username: email,
+              password: password,
+            }),
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            localStorage.setItem('token', data.access_token);
+            window.location.href = '/';
+          } else {
+            errorDiv.textContent = 'Invalid email or password';
+            errorDiv.classList.remove('hidden');
+          }
+        } catch (error) {
+          errorDiv.textContent = 'Failed to connect to server';
+          errorDiv.classList.remove('hidden');
+        }
+      });
+    </script>
+  </body>
+</html>
