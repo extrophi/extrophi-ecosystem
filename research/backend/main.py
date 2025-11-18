@@ -21,6 +21,9 @@ from db import get_db_manager, ContentCRUD, SourceCRUD, ScrapeJobCRUD, VectorSea
 # Import enrichment engine
 from enrichment import EnrichmentEngine
 
+# Import API routes
+from api.routes import analytics_router
+
 # Load environment variables
 load_dotenv()
 
@@ -54,6 +57,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include API routers
+app.include_router(analytics_router)
 
 
 # ============================================================================
@@ -314,6 +320,7 @@ async def root():
         "endpoints": {
             "enrich": "POST /api/enrich",
             "scrape": "POST /api/scrape",
+            "analytics": "GET /api/analytics/*"
         }
     }
 
@@ -329,7 +336,7 @@ async def startup_event():
 
     logger.info("Research Module API starting up...")
     logger.info("CORS enabled for Writer module")
-    logger.info("Endpoints: /health, /api/enrich, /api/scrape")
+    logger.info("Endpoints: /health, /api/enrich, /api/scrape, /api/analytics/*")
 
     # Initialize database connection
     try:
