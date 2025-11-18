@@ -7,6 +7,7 @@ Integrates with Writer module via CORS-enabled API.
 
 import logging
 import os
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 
@@ -21,6 +22,13 @@ from db import get_db_manager, ContentCRUD, SourceCRUD, ScrapeJobCRUD, VectorSea
 # Import enrichment engine
 from enrichment import EnrichmentEngine
 
+# Import service registry (optional - only if Consul is available)
+try:
+    from orchestrator.registry import ServiceRegistry
+    REGISTRY_AVAILABLE = True
+except ImportError:
+    REGISTRY_AVAILABLE = False
+
 # Load environment variables
 load_dotenv()
 
@@ -31,15 +39,134 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Global enrichment engine instance (initialized on startup)
+enrichment_engine: Optional[EnrichmentEngine] = None
+
+# Global registry and service ID for lifecycle management
+registry = None
+service_id = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan event handler.
+
+    Handles:
+    - Service registration with Consul on startup
+    - Database initialization
+    - Enrichment engine initialization
+    - Service deregistration on shutdown
+    """
+    global enrichment_engine, registry, service_id
+
+    logger.info("Research Module API starting up...")
+
+    # Initialize database connection
+    try:
+        db_manager = get_db_manager()
+        await db_manager.connect(min_size=10, max_size=20)
+        logger.info("Database connection pool initialized")
+
+        # Verify database health
+        health = await db_manager.health_check()
+        if health["status"] == "healthy":
+            logger.info(f"Database: {health['version']}")
+            logger.info(f"pgvector: {'enabled' if health['pgvector_enabled'] else 'disabled'}")
+            logger.info(f"Pool: {health['pool_size']} connections ({health['pool_idle']} idle)")
+        else:
+            logger.error(f"Database health check failed: {health.get('error')}")
+
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}")
+        logger.warning("API will start but database operations will fail")
+
+    # Initialize enrichment engine
+    try:
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not openai_api_key:
+            logger.warning("OPENAI_API_KEY not found - enrichment engine disabled")
+            logger.warning("Set OPENAI_API_KEY environment variable to enable enrichment")
+        else:
+            logger.info("Initializing enrichment engine...")
+
+            db_manager = get_db_manager()
+
+            enrichment_engine = EnrichmentEngine(
+                db_manager=db_manager,
+                openai_api_key=openai_api_key,
+                embedding_model="text-embedding-ada-002",
+                llm_model=os.getenv("LLM_MODEL", "gpt-4")
+            )
+
+            await enrichment_engine.initialize()
+
+            logger.info("✓ Enrichment engine initialized successfully")
+            logger.info(f"  - Embedding model: text-embedding-ada-002")
+            logger.info(f"  - LLM model: {os.getenv('LLM_MODEL', 'gpt-4')}")
+            logger.info("  - Components: LAMBDA (embeddings) + THETA (vector search) + GPT-4 (analysis)")
+
+    except Exception as e:
+        logger.error(f"Failed to initialize enrichment engine: {e}", exc_info=True)
+        logger.warning("Enrichment endpoints will return 503 errors")
+
+    # Register with Consul if available
+    if REGISTRY_AVAILABLE:
+        try:
+            consul_host = os.getenv("CONSUL_HOST", "localhost")
+            consul_port = int(os.getenv("CONSUL_PORT", "8500"))
+
+            registry = ServiceRegistry(host=consul_host, port=consul_port)
+
+            # Check if Consul is healthy before registering
+            if registry.is_healthy():
+                service_id = registry.register_service(
+                    name=os.getenv("SERVICE_NAME", "research-api"),
+                    address=os.getenv("SERVICE_ADDRESS", "localhost"),
+                    port=int(os.getenv("SERVICE_PORT", "8000")),
+                    tags=os.getenv("SERVICE_TAGS", "api,research").split(","),
+                    health_check_interval="10s",
+                    health_check_timeout="5s",
+                )
+                logger.info(f"✓ Registered with Consul: {service_id}")
+            else:
+                logger.warning("⚠ Consul not available - running without service registry")
+        except Exception as e:
+            logger.warning(f"⚠ Failed to register with Consul: {e}")
+            logger.warning("  Continuing without service registry...")
+    else:
+        logger.warning("⚠ Service registry not available - install python-consul to enable")
+
+    logger.info("CORS enabled for Writer module")
+    logger.info("Endpoints: /health, /api/enrich, /api/scrape")
+
+    yield
+
+    # Shutdown
+    logger.info("Research Module API shutting down...")
+
+    # Deregister from Consul
+    if registry and service_id:
+        try:
+            registry.deregister_service(service_id)
+            logger.info(f"✓ Deregistered from Consul: {service_id}")
+        except Exception as e:
+            logger.error(f"Error deregistering from Consul: {e}")
+
+    # Close database connection
+    try:
+        db_manager = get_db_manager()
+        await db_manager.disconnect()
+        logger.info("Database connection pool closed")
+    except Exception as e:
+        logger.error(f"Error closing database connection: {e}")
+
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Research Module API",
     description="Content enrichment and scraping service for BrainDump v3.0",
     version="1.0.0",
+    lifespan=lifespan,
 )
-
-# Global enrichment engine instance (initialized on startup)
-enrichment_engine: Optional[EnrichmentEngine] = None
 
 # Configure CORS for Writer module
 app.add_middleware(
@@ -319,79 +446,8 @@ async def root():
 
 
 # ============================================================================
-# Application Lifecycle
+# Application Lifecycle (moved to lifespan context manager above)
 # ============================================================================
-
-@app.on_event("startup")
-async def startup_event():
-    """Application startup tasks"""
-    global enrichment_engine
-
-    logger.info("Research Module API starting up...")
-    logger.info("CORS enabled for Writer module")
-    logger.info("Endpoints: /health, /api/enrich, /api/scrape")
-
-    # Initialize database connection
-    try:
-        db_manager = get_db_manager()
-        await db_manager.connect(min_size=10, max_size=20)
-        logger.info("Database connection pool initialized")
-
-        # Verify database health
-        health = await db_manager.health_check()
-        if health["status"] == "healthy":
-            logger.info(f"Database: {health['version']}")
-            logger.info(f"pgvector: {'enabled' if health['pgvector_enabled'] else 'disabled'}")
-            logger.info(f"Pool: {health['pool_size']} connections ({health['pool_idle']} idle)")
-        else:
-            logger.error(f"Database health check failed: {health.get('error')}")
-
-    except Exception as e:
-        logger.error(f"Failed to initialize database: {e}")
-        logger.warning("API will start but database operations will fail")
-
-    # Initialize enrichment engine
-    try:
-        openai_api_key = os.getenv("OPENAI_API_KEY")
-        if not openai_api_key:
-            logger.warning("OPENAI_API_KEY not found - enrichment engine disabled")
-            logger.warning("Set OPENAI_API_KEY environment variable to enable enrichment")
-        else:
-            logger.info("Initializing enrichment engine...")
-
-            db_manager = get_db_manager()
-
-            enrichment_engine = EnrichmentEngine(
-                db_manager=db_manager,
-                openai_api_key=openai_api_key,
-                embedding_model="text-embedding-ada-002",
-                llm_model=os.getenv("LLM_MODEL", "gpt-4")
-            )
-
-            await enrichment_engine.initialize()
-
-            logger.info("✓ Enrichment engine initialized successfully")
-            logger.info(f"  - Embedding model: text-embedding-ada-002")
-            logger.info(f"  - LLM model: {os.getenv('LLM_MODEL', 'gpt-4')}")
-            logger.info("  - Components: LAMBDA (embeddings) + THETA (vector search) + GPT-4 (analysis)")
-
-    except Exception as e:
-        logger.error(f"Failed to initialize enrichment engine: {e}", exc_info=True)
-        logger.warning("Enrichment endpoints will return 503 errors")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Application shutdown tasks"""
-    logger.info("Research Module API shutting down...")
-
-    # Close database connection
-    try:
-        db_manager = get_db_manager()
-        await db_manager.disconnect()
-        logger.info("Database connection pool closed")
-    except Exception as e:
-        logger.error(f"Error closing database connection: {e}")
 
 
 if __name__ == "__main__":

@@ -15,6 +15,9 @@ dependencies = [
     # HTTP Client with retry support
     "httpx>=0.25.0",
 
+    # Service Discovery
+    "python-consul>=1.1.0",
+
     # Utilities
     "python-dotenv>=1.0.0",
 ]
