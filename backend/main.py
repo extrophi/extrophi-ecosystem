@@ -7,6 +7,7 @@ from backend.api.routes import (
     analyze_router,
     api_keys_router,
     attributions_router,
+    bulk_router,
     health_router,
     publish_router,
     query_router,
@@ -31,6 +32,7 @@ app.include_router(api_keys_router)
 app.include_router(tokens_router)
 app.include_router(publish_router)
 app.include_router(attributions_router)
+app.include_router(bulk_router)
 
 
 @app.get("/")
