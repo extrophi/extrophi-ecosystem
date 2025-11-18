@@ -21,3 +21,7 @@ tiktoken==0.5.1  # Token counting for OpenAI models
 
 # Development
 python-dotenv==1.0.0
+
+# Analytics
+pandas==2.1.4
+vaderSentiment==3.3.2

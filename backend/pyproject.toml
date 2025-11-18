@@ -37,6 +37,10 @@ dependencies = [
     # Utilities
     "python-dotenv>=1.0.0",
     "python-multipart>=0.0.6",
+
+    # Analytics
+    "pandas>=2.1.0",
+    "vaderSentiment>=3.3.2",
 ]
 
 [project.optional-dependencies]
