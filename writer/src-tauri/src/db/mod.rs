@@ -3,6 +3,7 @@
 use rusqlite::{Connection, Result as SqliteResult};
 use std::path::PathBuf;
 
+pub mod migration;
 pub mod models;
 pub mod repository;
 
@@ -19,6 +20,9 @@ pub fn initialize_db(db_path: PathBuf) -> SqliteResult<Connection> {
     // Load schema
     let schema = include_str!("schema.sql");
     conn.execute_batch(schema)?;
+
+    // Run migrations (for existing databases)
+    migration::run_migrations(&conn)?;
 
     Ok(conn)
 }
@@ -71,7 +75,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(version, "7");  // Updated schema version after migrations
+        assert_eq!(version, "8");  // Updated schema version after migrations
     }
 
     #[test]

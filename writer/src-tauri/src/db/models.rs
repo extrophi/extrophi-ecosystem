@@ -47,6 +47,39 @@ pub struct ChatSession {
     pub title: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub privacy_level: Option<PrivacyLevel>,
+    pub published: bool,
+    pub git_sha: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum PrivacyLevel {
+    Private,
+    Personal,
+    Business,
+    Ideas,
+}
+
+impl PrivacyLevel {
+    pub fn as_str(&self) -> &str {
+        match self {
+            PrivacyLevel::Private => "PRIVATE",
+            PrivacyLevel::Personal => "PERSONAL",
+            PrivacyLevel::Business => "BUSINESS",
+            PrivacyLevel::Ideas => "IDEAS",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Result<Self, String> {
+        match s {
+            "PRIVATE" => Ok(PrivacyLevel::Private),
+            "PERSONAL" => Ok(PrivacyLevel::Personal),
+            "BUSINESS" => Ok(PrivacyLevel::Business),
+            "IDEAS" => Ok(PrivacyLevel::Ideas),
+            _ => Err(format!("Invalid privacy level: {}", s)),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

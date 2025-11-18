@@ -191,12 +191,15 @@ impl Repository {
 
     pub fn create_chat_session(&self, session: &ChatSession) -> SqliteResult<i64> {
         self.conn.execute(
-            "INSERT INTO chat_sessions (title, created_at, updated_at)
-             VALUES (?1, ?2, ?3)",
+            "INSERT INTO chat_sessions (title, created_at, updated_at, privacy_level, published, git_sha)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 session.title,
                 session.created_at.to_rfc3339(),
                 session.updated_at.to_rfc3339(),
+                session.privacy_level.as_ref().map(|p| p.as_str()),
+                session.published as i32,
+                session.git_sha,
             ],
         )?;
         Ok(self.conn.last_insert_rowid())
@@ -204,14 +207,20 @@ impl Repository {
 
     pub fn get_chat_session(&self, id: i64) -> SqliteResult<ChatSession> {
         self.conn.query_row(
-            "SELECT id, title, created_at, updated_at FROM chat_sessions WHERE id = ?1",
+            "SELECT id, title, created_at, updated_at, privacy_level, published, git_sha FROM chat_sessions WHERE id = ?1",
             params![id],
             |row| {
+                let privacy_level_str: Option<String> = row.get(4)?;
+                let privacy_level = privacy_level_str.and_then(|s| PrivacyLevel::from_str(&s).ok());
+
                 Ok(ChatSession {
                     id: Some(row.get(0)?),
                     title: row.get(1)?,
                     created_at: row.get::<_, String>(2)?.parse().unwrap_or(Utc::now()),
                     updated_at: row.get::<_, String>(3)?.parse().unwrap_or(Utc::now()),
+                    privacy_level,
+                    published: row.get::<_, i32>(5)? != 0,
+                    git_sha: row.get(6)?,
                 })
             },
         )
@@ -219,16 +228,22 @@ impl Repository {
 
     pub fn list_chat_sessions(&self, limit: usize) -> SqliteResult<Vec<ChatSession>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, title, created_at, updated_at
+            "SELECT id, title, created_at, updated_at, privacy_level, published, git_sha
              FROM chat_sessions ORDER BY updated_at DESC LIMIT ?1",
         )?;
 
         let sessions = stmt.query_map(params![limit], |row| {
+            let privacy_level_str: Option<String> = row.get(4)?;
+            let privacy_level = privacy_level_str.and_then(|s| PrivacyLevel::from_str(&s).ok());
+
             Ok(ChatSession {
                 id: Some(row.get(0)?),
                 title: row.get(1)?,
                 created_at: row.get::<_, String>(2)?.parse().unwrap_or(Utc::now()),
                 updated_at: row.get::<_, String>(3)?.parse().unwrap_or(Utc::now()),
+                privacy_level,
+                published: row.get::<_, i32>(5)? != 0,
+                git_sha: row.get(6)?,
             })
         })?;
 
@@ -239,6 +254,22 @@ impl Repository {
         self.conn.execute(
             "UPDATE chat_sessions SET title = ?1, updated_at = ?2 WHERE id = ?3",
             params![title, Utc::now().to_rfc3339(), id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_chat_session_privacy(&self, id: i64, privacy_level: Option<PrivacyLevel>) -> SqliteResult<()> {
+        self.conn.execute(
+            "UPDATE chat_sessions SET privacy_level = ?1, updated_at = ?2 WHERE id = ?3",
+            params![privacy_level.as_ref().map(|p| p.as_str()), Utc::now().to_rfc3339(), id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_chat_session_published(&self, id: i64, published: bool, git_sha: Option<String>) -> SqliteResult<()> {
+        self.conn.execute(
+            "UPDATE chat_sessions SET published = ?1, git_sha = ?2, updated_at = ?3 WHERE id = ?4",
+            params![published as i32, git_sha, Utc::now().to_rfc3339(), id],
         )?;
         Ok(())
     }
@@ -680,7 +711,7 @@ impl Repository {
         let query = if mode == "all" {
             // Session must have ALL specified tags
             format!(
-                "SELECT DISTINCT cs.id, cs.title, cs.created_at, cs.updated_at
+                "SELECT DISTINCT cs.id, cs.title, cs.created_at, cs.updated_at, cs.privacy_level, cs.published, cs.git_sha
                  FROM chat_sessions cs
                  WHERE (
                      SELECT COUNT(DISTINCT st.tag_id)
@@ -695,7 +726,7 @@ impl Repository {
         } else {
             // Session must have ANY of the specified tags
             format!(
-                "SELECT DISTINCT cs.id, cs.title, cs.created_at, cs.updated_at
+                "SELECT DISTINCT cs.id, cs.title, cs.created_at, cs.updated_at, cs.privacy_level, cs.published, cs.git_sha
                  FROM chat_sessions cs
                  INNER JOIN session_tags st ON cs.id = st.session_id
                  WHERE st.tag_id IN ({})
@@ -723,11 +754,17 @@ impl Repository {
 
         // Single query_map call to avoid closure type mismatch
         let sessions = stmt.query_map(&*params_refs, |row| {
+            let privacy_level_str: Option<String> = row.get(4)?;
+            let privacy_level = privacy_level_str.and_then(|s| PrivacyLevel::from_str(&s).ok());
+
             Ok(ChatSession {
                 id: Some(row.get(0)?),
                 title: row.get(1)?,
                 created_at: row.get::<_, String>(2)?.parse().unwrap_or(Utc::now()),
                 updated_at: row.get::<_, String>(3)?.parse().unwrap_or(Utc::now()),
+                privacy_level,
+                published: row.get::<_, i32>(5)? != 0,
+                git_sha: row.get(6)?,
             })
         })?;
 
@@ -1169,6 +1206,9 @@ mod tests {
             title: Some("Test Session".to_string()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            privacy_level: None,
+            published: false,
+            git_sha: None,
         };
 
         let session_id = repo.create_chat_session(&session).unwrap();
@@ -1177,12 +1217,28 @@ mod tests {
         // Fetch session
         let fetched = repo.get_chat_session(session_id).unwrap();
         assert_eq!(fetched.title, Some("Test Session".to_string()));
+        assert_eq!(fetched.privacy_level, None);
+        assert_eq!(fetched.published, false);
+        assert_eq!(fetched.git_sha, None);
 
         // Update title
         repo.update_chat_session_title(session_id, "Updated Title")
             .unwrap();
         let updated = repo.get_chat_session(session_id).unwrap();
         assert_eq!(updated.title, Some("Updated Title".to_string()));
+
+        // Update privacy level
+        repo.update_chat_session_privacy(session_id, Some(PrivacyLevel::Business))
+            .unwrap();
+        let updated = repo.get_chat_session(session_id).unwrap();
+        assert_eq!(updated.privacy_level, Some(PrivacyLevel::Business));
+
+        // Update published status
+        repo.update_chat_session_published(session_id, true, Some("abc123".to_string()))
+            .unwrap();
+        let updated = repo.get_chat_session(session_id).unwrap();
+        assert_eq!(updated.published, true);
+        assert_eq!(updated.git_sha, Some("abc123".to_string()));
 
         // Delete session
         repo.delete_chat_session(session_id).unwrap();
@@ -1200,6 +1256,9 @@ mod tests {
             title: None,
             created_at: Utc::now(),
             updated_at: Utc::now(),
+            privacy_level: None,
+            published: false,
+            git_sha: None,
         };
         let session_id = repo.create_chat_session(&session).unwrap();
 

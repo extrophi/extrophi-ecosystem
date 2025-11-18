@@ -51,10 +51,15 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    privacy_level TEXT CHECK(privacy_level IN ('PRIVATE', 'PERSONAL', 'BUSINESS', 'IDEAS')),
+    published INTEGER DEFAULT 0,
+    git_sha TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_created ON chat_sessions(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_privacy ON chat_sessions(privacy_level);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_published ON chat_sessions(published);
 
 -- Messages table (user recordings + AI responses)
 CREATE TABLE IF NOT EXISTS messages (
@@ -120,7 +125,7 @@ CREATE TABLE IF NOT EXISTS user_preferences (
 INSERT OR IGNORE INTO user_preferences (id, language) VALUES (1, 'en');
 
 -- Store schema version
-INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '7');
+INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '8');
 
 -- Insert default RAG prompt templates
 INSERT OR IGNORE INTO prompt_templates (name, system_prompt, description, is_default) VALUES
