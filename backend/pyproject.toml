@@ -12,6 +12,9 @@ dependencies = [
     "uvicorn[standard]>=0.24.0",
     "pydantic>=2.5.0",
 
+    # GraphQL
+    "strawberry-graphql[fastapi]==0.217.1",
+
     # Database
     "sqlalchemy>=2.0.0",
     "psycopg2-binary>=2.9.0",

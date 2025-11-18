@@ -7,7 +7,7 @@ from uuid import uuid4, UUID as PyUUID
 
 from pgvector.sqlalchemy import Vector
 from pydantic import BaseModel, Field
-from sqlalchemy import DECIMAL, BigInteger, Boolean, Column, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import DECIMAL, BigInteger, Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -631,3 +631,53 @@ class AttributionModel(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class APIKeyCreateRequest(BaseModel):
+    """Request model for creating API keys"""
+
+    key_name: str
+    expires_in_days: Optional[int] = None
+    rate_limit_requests: Optional[int] = None
+
+
+class APIKeyCreateResponse(BaseModel):
+    """Response model for API key creation"""
+
+    id: str
+    key_name: str
+    api_key: str  # Only shown once during creation
+    key_prefix: str
+    expires_at: Optional[datetime] = None
+    rate_limit_requests: int
+    created_at: datetime
+
+
+class APIKeyModel(BaseModel):
+    """Pydantic model for API keys (without sensitive data)"""
+
+    id: str
+    user_id: str
+    key_name: str
+    key_prefix: str
+    is_active: bool
+    is_revoked: bool
+    rate_limit_requests: int
+    rate_limit_window_seconds: int
+    current_usage_count: int
+    last_used_at: Optional[datetime] = None
+    request_count: int
+    expires_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+    revoked_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class APIKeyListResponse(BaseModel):
+    """Response model for listing API keys"""
+
+    keys: List[APIKeyModel]
+    total: int
