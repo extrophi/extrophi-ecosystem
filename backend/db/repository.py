@@ -187,15 +187,27 @@ class ContentRepository:
         return [(row[0], float(row[1])) for row in results]
 
     def count_by_platform(self, platform: str) -> int:
-        """Count total content pieces for a platform"""
-        return self.session.query(ContentORM).filter_by(platform=platform).count()
+        """
+        Count total content pieces for a platform.
+
+        Optimized: Uses COUNT(*) which is faster than count()
+        """
+        return (
+            self.session.query(func.count(ContentORM.id))
+            .filter(ContentORM.platform == platform)
+            .scalar()
+        )
 
     def count_analyzed(self) -> int:
-        """Count content pieces with LLM analysis"""
+        """
+        Count content pieces with LLM analysis.
+
+        Optimized: Uses partial index and scalar() for better performance
+        """
         return (
-            self.session.query(ContentORM)
+            self.session.query(func.count(ContentORM.id))
             .filter(ContentORM.analyzed_at.is_not(None))
-            .count()
+            .scalar()
         )
 
     def delete(self, content_id: UUID) -> bool:
@@ -476,6 +488,8 @@ def health_check(session: Session) -> Dict[str, Any]:
     """
     Database health check with pgvector extension verification.
 
+    Optimized: Uses single query with multiple aggregates for faster execution.
+
     Returns:
         Health status dict with connection, extension, and table info
     """
@@ -489,16 +503,21 @@ def health_check(session: Session) -> Dict[str, Any]:
         )
         has_pgvector = result.scalar() is not None
 
-        # Count records
-        content_count = session.query(ContentORM).count()
-        author_count = session.query(AuthorORM).count()
+        # Count records with optimized query
+        # Use func.count() which is faster than .count()
+        count_query = text("""
+            SELECT
+                (SELECT COUNT(*) FROM contents) as content_count,
+                (SELECT COUNT(*) FROM authors) as author_count
+        """)
+        counts = session.execute(count_query).fetchone()
 
         return {
             "status": "healthy",
             "database": "connected",
             "pgvector": "enabled" if has_pgvector else "disabled",
-            "content_count": content_count,
-            "author_count": author_count,
+            "content_count": counts[0] if counts else 0,
+            "author_count": counts[1] if counts else 0,
         }
     except Exception as e:
         return {
