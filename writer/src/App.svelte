@@ -11,6 +11,7 @@
   import StatsDashboard from './lib/components/StatsDashboard.svelte';
   import ToastContainer from './lib/components/ToastContainer.svelte';
   import ShortcutsHelp from './lib/components/ShortcutsHelp.svelte';
+  import TerminalIsland from './islands/TerminalIsland.svelte';
   import { scanText, highlightMatches } from './lib/privacy_scanner';
   import { shortcuts, matchesShortcut } from './lib/utils/shortcuts.js';
   import { setupI18n } from './lib/i18n/index.js';
@@ -44,6 +45,9 @@
   // Settings panel state
   let isSettingsOpen = $state(false);
   let needsApiKeySetup = $state(true); // Track if API keys are configured
+
+  // Terminal panel state
+  let terminalVisible = $state(false);
 
   // Claude integration state
   let isSendingToClaude = $state(false);
@@ -583,6 +587,10 @@
       e.preventDefault();
       privacyPanelVisible = !privacyPanelVisible;
     }
+    else if (matchesShortcut(e, shortcuts.terminal)) {
+      e.preventDefault();
+      terminalVisible = !terminalVisible;
+    }
   }
 
   // Watch for settings panel closing to refresh API key status
@@ -873,6 +881,13 @@
 
   <!-- Settings Panel Component -->
   <SettingsPanel bind:isOpen={isSettingsOpen} />
+
+  <!-- Terminal Panel Component -->
+  {#if terminalVisible}
+    <div class="terminal-overlay">
+      <TerminalIsland bind:visible={terminalVisible} />
+    </div>
+  {/if}
 
   <!-- Toast Notifications -->
   <ToastContainer />
@@ -1749,5 +1764,20 @@
 
   .global-error-toast .toast-close:active {
     transform: scale(0.9);
+  }
+
+  /* ==================== Terminal Overlay ==================== */
+  .terminal-overlay {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 900;
+    padding: 0 20px 20px 20px;
+    pointer-events: none;
+  }
+
+  .terminal-overlay > :global(*) {
+    pointer-events: auto;
   }
 </style>
