@@ -117,7 +117,7 @@ class YouTubeScraper(BaseScraper):
             metrics=MetricsModel(
                 likes=0,
                 views=0,
-                replies=0,
+                comments=0,
                 shares=0,
                 engagement_rate=0.0,
             ),
