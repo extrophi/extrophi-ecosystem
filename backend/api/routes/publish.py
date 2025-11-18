@@ -19,6 +19,7 @@ from backend.auth.api_keys import require_api_key
 from backend.db.connection import get_session
 from backend.db.models import CardORM
 from backend.tokens.extropy import ExtropyTokenSystem
+from backend.webhooks.sender import WebhookSender
 
 router = APIRouter(prefix="/publish", tags=["publish"])
 
@@ -276,6 +277,22 @@ async def publish_cards(
             published_urls.append(published_url)
             total_extropy_earned += tokens_per_publish
             cards_published += 1
+
+            # Trigger webhook: card.published
+            webhook_sender = WebhookSender(db)
+            await webhook_sender.send_event(
+                event_type="card.published",
+                user_id=user_uuid,
+                payload={
+                    "card_id": str(card_orm.id),
+                    "title": card.title,
+                    "category": card.category,
+                    "privacy_level": card.privacy_level,
+                    "published_url": published_url,
+                    "extropy_earned": str(tokens_per_publish),
+                    "published_at": card_orm.published_at.isoformat() if card_orm.published_at else None,
+                },
+            )
 
         # Commit all changes
         db.commit()

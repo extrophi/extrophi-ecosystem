@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from backend.db.connection import get_session
 from backend.tokens.extropy import ExtropyTokenSystem
+from backend.webhooks.sender import WebhookSender
 
 router = APIRouter(prefix="/tokens", tags=["tokens"])
 
@@ -171,6 +172,41 @@ async def transfer_tokens(request: TransferTokensRequest, db: Session = Depends(
             reason=request.reason,
             attribution_id=attribution_id,
             metadata=request.metadata,
+        )
+
+        # Trigger webhooks: token.transferred (for both sender and receiver)
+        webhook_sender = WebhookSender(db)
+
+        # Send webhook to sender
+        await webhook_sender.send_event(
+            event_type="token.transferred",
+            user_id=from_user_id,
+            payload={
+                "transaction_id": result["transaction_id"],
+                "direction": "sent",
+                "from_user_id": result["from_user_id"],
+                "to_user_id": result["to_user_id"],
+                "amount": result["amount"],
+                "new_balance": result["from_balance"],
+                "reason": result["reason"],
+                "attribution_id": str(attribution_id) if attribution_id else None,
+            },
+        )
+
+        # Send webhook to receiver
+        await webhook_sender.send_event(
+            event_type="token.transferred",
+            user_id=to_user_id,
+            payload={
+                "transaction_id": result["transaction_id"],
+                "direction": "received",
+                "from_user_id": result["from_user_id"],
+                "to_user_id": result["to_user_id"],
+                "amount": result["amount"],
+                "new_balance": result["to_balance"],
+                "reason": result["reason"],
+                "attribution_id": str(attribution_id) if attribution_id else None,
+            },
         )
 
         return TransferTokensResponse(**result)
