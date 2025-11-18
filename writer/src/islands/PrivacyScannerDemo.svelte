@@ -50,8 +50,13 @@ Think long-term. Act short-term. Iterate constantly.
     `.trim()
   };
 
-  let content = $state(examples[currentExample]);
+  let content = $state(examples['private']);
   let showDetails = $state(true);
+
+  // Update content when example changes
+  $effect(() => {
+    content = examples[currentExample];
+  });
 
   function selectExample(example: keyof typeof examples) {
     currentExample = example;
