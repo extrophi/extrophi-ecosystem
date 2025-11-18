@@ -12,6 +12,13 @@ from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, HttpUrl
+from dotenv import load_dotenv
+
+# Import database modules
+from db import get_db_manager, ContentCRUD, SourceCRUD, ScrapeJobCRUD, VectorSearch
+
+# Load environment variables
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -119,12 +126,20 @@ async def health_check():
     """
     logger.info("Health check requested")
 
+    # Check database health
+    db_manager = get_db_manager()
+    db_health = await db_manager.health_check()
+
+    # Determine overall database status
+    db_status = "healthy" if db_health.get("status") == "healthy" else "unhealthy"
+
     return HealthResponse(
         status="healthy",
         version="1.0.0",
         components={
             "api": "healthy",
-            "database": "pending",  # Will be updated by KAPPA agent
+            "database": db_status,
+            "pgvector": "enabled" if db_health.get("pgvector_enabled") else "disabled",
             "embeddings": "pending",  # Will be updated by LAMBDA agent
             "scrapers": "pending",  # Will be updated by IOTA agent
         }
@@ -248,11 +263,38 @@ async def startup_event():
     logger.info("CORS enabled for Writer module")
     logger.info("Endpoints: /health, /api/enrich, /api/scrape")
 
+    # Initialize database connection
+    try:
+        db_manager = get_db_manager()
+        await db_manager.connect(min_size=10, max_size=20)
+        logger.info("Database connection pool initialized")
+
+        # Verify database health
+        health = await db_manager.health_check()
+        if health["status"] == "healthy":
+            logger.info(f"Database: {health['version']}")
+            logger.info(f"pgvector: {'enabled' if health['pgvector_enabled'] else 'disabled'}")
+            logger.info(f"Pool: {health['pool_size']} connections ({health['pool_idle']} idle)")
+        else:
+            logger.error(f"Database health check failed: {health.get('error')}")
+
+    except Exception as e:
+        logger.error(f"Failed to initialize database: {e}")
+        logger.warning("API will start but database operations will fail")
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Application shutdown tasks"""
     logger.info("Research Module API shutting down...")
+
+    # Close database connection
+    try:
+        db_manager = get_db_manager()
+        await db_manager.disconnect()
+        logger.info("Database connection pool closed")
+    except Exception as e:
+        logger.error(f"Error closing database connection: {e}")
 
 
 if __name__ == "__main__":

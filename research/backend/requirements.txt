@@ -4,6 +4,12 @@ uvicorn[standard]==0.24.0
 pydantic==2.5.0
 pydantic[email]==2.5.0
 
+# Database
+asyncpg==0.29.0  # Async PostgreSQL driver
+psycopg2-binary==2.9.9  # Sync PostgreSQL driver (for migrations)
+sqlalchemy==2.0.23  # ORM (optional, for advanced features)
+pgvector==0.2.4  # pgvector Python client
+
 # Testing
 pytest==7.4.3
 pytest-asyncio==0.21.1
