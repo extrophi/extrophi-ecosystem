@@ -1,0 +1,293 @@
+name: Production Deploy
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: test_scraper
+          POSTGRES_USER: scraper
+          POSTGRES_PASSWORD: test_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Create virtual environment
+        working-directory: backend
+        run: uv venv
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          source .venv/bin/activate
+          uv pip install -r requirements.txt
+          uv pip install pytest pytest-cov pytest-asyncio httpx
+
+      - name: Run linting
+        working-directory: backend
+        run: |
+          source .venv/bin/activate
+          uv pip install ruff
+          ruff check .
+
+      - name: Run tests
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://scraper:test_password@localhost:5432/test_scraper
+          REDIS_URL: redis://localhost:6379
+          OPENAI_API_KEY: sk-test-key
+        run: |
+          source .venv/bin/activate
+          pytest --cov=. --cov-report=term-missing --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./backend/coverage.xml
+          flags: backend
+          fail_ci_if_error: false
+
+  build-and-push:
+    name: Build & Push Container Images
+    runs-on: ubuntu-latest
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+      image_digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/backend
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,prefix={{branch}}-
+
+      - name: Build and push backend image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/backend:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/backend:buildcache,mode=max
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/backend:${{ github.ref_name }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.spdx.json
+          retention-days: 30
+
+  deploy:
+    name: Deploy to Hetzner VPS
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    environment:
+      name: production
+      url: https://${{ secrets.HETZNER_HOST }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HETZNER_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.HETZNER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Create deployment package
+        run: |
+          tar -czf deploy.tar.gz \
+            research/podman-compose.yml \
+            backend/.env.example \
+            scripts/deploy-to-hetzner.sh
+
+      - name: Upload deployment package
+        run: |
+          scp -i ~/.ssh/deploy_key deploy.tar.gz \
+            ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }}:/tmp/
+
+      - name: Execute deployment
+        id: deploy
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+            ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} \
+            "cd /tmp && \
+             tar -xzf deploy.tar.gz && \
+             chmod +x scripts/deploy-to-hetzner.sh && \
+             sudo scripts/deploy-to-hetzner.sh \
+               ${{ github.ref_name }} \
+               ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/backend \
+               ${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Health check
+        run: |
+          sleep 30
+          for i in {1..10}; do
+            if curl -f https://${{ secrets.HETZNER_HOST }}/health; then
+              echo "✅ Deployment successful - health check passed"
+              exit 0
+            fi
+            echo "Waiting for service to be ready... ($i/10)"
+            sleep 10
+          done
+          echo "❌ Health check failed"
+          exit 1
+
+      - name: Rollback on failure
+        if: failure() && steps.deploy.outcome == 'failure'
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+            ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} \
+            "sudo /opt/extrophi/scripts/rollback.sh"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+            ${{ secrets.HETZNER_USER }}@${{ secrets.HETZNER_HOST }} \
+            "rm -f /tmp/deploy.tar.gz"
+          rm -f ~/.ssh/deploy_key
+
+  notify:
+    name: Notify Deployment Status
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: always() && startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Send success notification
+        if: needs.deploy.result == 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = context.ref.replace('refs/tags/', '');
+            const message = `✅ **Deployment Successful**
+
+            **Version:** ${tag}
+            **Environment:** Production (Hetzner VPS)
+            **Status:** Live
+            **URL:** https://${{ secrets.HETZNER_HOST }}
+
+            [View Workflow](${context.payload.repository.html_url}/actions/runs/${context.runId})`;
+
+            github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: message
+            });
+
+      - name: Send failure notification
+        if: needs.deploy.result == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tag = context.ref.replace('refs/tags/', '');
+            const message = `❌ **Deployment Failed**
+
+            **Version:** ${tag}
+            **Environment:** Production (Hetzner VPS)
+            **Status:** Rolled back
+
+            [View Logs](${context.payload.repository.html_url}/actions/runs/${context.runId})`;
+
+            github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: message
+            });
+
+            // Create issue for failed deployment
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `🚨 Deployment Failed: ${tag}`,
+              body: `Automated deployment to production failed.\n\n${message}`,
+              labels: ['deployment', 'bug', 'priority-high']
+            });
