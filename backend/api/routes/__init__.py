@@ -4,5 +4,6 @@ from backend.api.routes.analyze import router as analyze_router
 from backend.api.routes.health import router as health_router
 from backend.api.routes.query import router as query_router
 from backend.api.routes.scrape import router as scrape_router
+from backend.api.routes.tokens import router as tokens_router
 
-__all__ = ["health_router", "scrape_router", "analyze_router", "query_router"]
+__all__ = ["health_router", "scrape_router", "analyze_router", "query_router", "tokens_router"]

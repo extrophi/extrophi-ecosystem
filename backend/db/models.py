@@ -1,13 +1,14 @@
 """SQLAlchemy ORM models and Pydantic schemas"""
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Dict, List, Optional
-from uuid import uuid4
+from uuid import uuid4, UUID as PyUUID
 
 from pgvector.sqlalchemy import Vector
 from pydantic import BaseModel, Field
-from sqlalchemy import Column, DateTime, Index, String, Text
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy import DECIMAL, Boolean, Column, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
@@ -171,6 +172,208 @@ class ResearchSessionORM(Base):
         return f"<ResearchSessionORM(id={self.id}, name={self.session_name})>"
 
 
+class UserORM(Base):
+    """ORM model for user accounts with $EXTROPY token balances"""
+
+    __tablename__ = "users"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    username = Column(String(255), nullable=False, unique=True, index=True)
+    email = Column(String(255), nullable=False, unique=True, index=True)
+    display_name = Column(String(500), nullable=True)
+    bio = Column(Text, nullable=True)
+    avatar_url = Column(Text, nullable=True)
+
+    # $EXTROPY token balance (DECIMAL for precise money handling)
+    extropy_balance = Column(DECIMAL(20, 8), nullable=False, default=Decimal("0.00000000"))
+
+    # API authentication
+    api_key_hash = Column(String(255), nullable=True)
+
+    # Metadata
+    metadata = Column(JSONB, nullable=True, default={})
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_login_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    cards = relationship("CardORM", back_populates="user", cascade="all, delete-orphan")
+    ledger_from = relationship(
+        "ExtropyLedgerORM",
+        foreign_keys="ExtropyLedgerORM.from_user_id",
+        back_populates="from_user",
+    )
+    ledger_to = relationship(
+        "ExtropyLedgerORM", foreign_keys="ExtropyLedgerORM.to_user_id", back_populates="to_user"
+    )
+
+    __table_args__ = (
+        Index("idx_users_username", "username"),
+        Index("idx_users_email", "email"),
+        Index("idx_users_created_at", "created_at"),
+    )
+
+    def __repr__(self):
+        return f"<UserORM(id={self.id}, username={self.username}, balance={self.extropy_balance})>"
+
+
+class CardORM(Base):
+    """ORM model for published content cards from Writer module"""
+
+    __tablename__ = "cards"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+
+    # Card content
+    title = Column(String(1000), nullable=False)
+    body = Column(Text, nullable=False)
+    tags = Column(ARRAY(Text), default=[])
+
+    # Privacy level from Writer
+    privacy_level = Column(String(50), nullable=False)
+
+    # Card category from Writer
+    category = Column(String(50), nullable=False)
+
+    # Source information
+    source_platform = Column(String(50), nullable=True)
+    source_url = Column(Text, nullable=True)
+    content_id = Column(UUID(as_uuid=True), ForeignKey("contents.id", ondelete="SET NULL"), nullable=True)
+
+    # Relationships
+    parent_card_id = Column(UUID(as_uuid=True), ForeignKey("cards.id", ondelete="SET NULL"), nullable=True)
+    related_card_ids = Column(ARRAY(UUID), default=[])
+
+    # Publishing status
+    is_published = Column(Boolean, default=False)
+    published_url = Column(Text, nullable=True)
+
+    # Metadata
+    metadata = Column(JSONB, nullable=True, default={})
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    published_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    user = relationship("UserORM", back_populates="cards")
+    content = relationship("ContentORM")
+    ledger_entries = relationship("ExtropyLedgerORM", back_populates="card")
+
+    __table_args__ = (
+        Index("idx_cards_user_id", "user_id"),
+        Index("idx_cards_privacy_level", "privacy_level"),
+        Index("idx_cards_category", "category"),
+        Index("idx_cards_is_published", "is_published"),
+        Index("idx_cards_content_id", "content_id"),
+        Index("idx_cards_parent_card_id", "parent_card_id"),
+        Index("idx_cards_created_at", "created_at"),
+        Index("idx_cards_published_at", "published_at"),
+        Index("idx_cards_user_published", "user_id", "is_published"),
+    )
+
+    def __repr__(self):
+        return f"<CardORM(id={self.id}, title={self.title[:50]}, user_id={self.user_id})>"
+
+
+class ExtropyLedgerORM(Base):
+    """ORM model for immutable $EXTROPY transaction log"""
+
+    __tablename__ = "extropy_ledger"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+
+    # Transaction participants
+    from_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    to_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    # Transaction details
+    amount = Column(DECIMAL(20, 8), nullable=False)
+    transaction_type = Column(String(50), nullable=False)
+
+    # Related entities
+    card_id = Column(UUID(as_uuid=True), ForeignKey("cards.id", ondelete="SET NULL"), nullable=True)
+    attribution_id = Column(
+        UUID(as_uuid=True), ForeignKey("attributions.id", ondelete="SET NULL"), nullable=True
+    )
+
+    # Balances after transaction (for audit trail)
+    from_user_balance_after = Column(DECIMAL(20, 8), nullable=True)
+    to_user_balance_after = Column(DECIMAL(20, 8), nullable=True)
+
+    # Description
+    description = Column(Text, nullable=True)
+
+    # Metadata
+    metadata = Column(JSONB, nullable=True, default={})
+
+    # Timestamp (immutable - no updates allowed)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    from_user = relationship("UserORM", foreign_keys=[from_user_id], back_populates="ledger_from")
+    to_user = relationship("UserORM", foreign_keys=[to_user_id], back_populates="ledger_to")
+    card = relationship("CardORM", back_populates="ledger_entries")
+
+    __table_args__ = (
+        Index("idx_extropy_ledger_from_user_id", "from_user_id"),
+        Index("idx_extropy_ledger_to_user_id", "to_user_id"),
+        Index("idx_extropy_ledger_transaction_type", "transaction_type"),
+        Index("idx_extropy_ledger_card_id", "card_id"),
+        Index("idx_extropy_ledger_attribution_id", "attribution_id"),
+        Index("idx_extropy_ledger_created_at", "created_at"),
+        Index("idx_extropy_ledger_from_user_created", "from_user_id", "created_at"),
+        Index("idx_extropy_ledger_to_user_created", "to_user_id", "created_at"),
+    )
+
+    def __repr__(self):
+        return f"<ExtropyLedgerORM(id={self.id}, type={self.transaction_type}, amount={self.amount})>"
+
+
+class AttributionORM(Base):
+    """ORM model for citations, remixes, and replies between cards"""
+
+    __tablename__ = "attributions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+
+    # Source and target cards
+    source_card_id = Column(UUID(as_uuid=True), ForeignKey("cards.id", ondelete="CASCADE"), nullable=False)
+    target_card_id = Column(UUID(as_uuid=True), ForeignKey("cards.id", ondelete="CASCADE"), nullable=False)
+
+    # Attribution type
+    attribution_type = Column(String(50), nullable=False)
+
+    # Details
+    context = Column(Text, nullable=True)
+    excerpt = Column(Text, nullable=True)
+
+    # $EXTROPY transfer on attribution
+    extropy_transferred = Column(DECIMAL(20, 8), default=Decimal("0.00000000"))
+
+    # Metadata
+    metadata = Column(JSONB, nullable=True, default={})
+
+    # Timestamp
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("idx_attributions_source_card_id", "source_card_id"),
+        Index("idx_attributions_target_card_id", "target_card_id"),
+        Index("idx_attributions_attribution_type", "attribution_type"),
+        Index("idx_attributions_created_at", "created_at"),
+        Index("idx_attributions_source_type", "source_card_id", "attribution_type"),
+        Index("idx_attributions_target_type", "target_card_id", "attribution_type"),
+    )
+
+    def __repr__(self):
+        return f"<AttributionORM(id={self.id}, type={self.attribution_type})>"
+
+
 # ============================================================================
 # Pydantic v2 Schemas
 # ============================================================================
@@ -288,6 +491,88 @@ class ResearchSessionModel(BaseModel):
     status: str = "in_progress"
     created_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class UserModel(BaseModel):
+    """Pydantic model for user accounts"""
+
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    username: str
+    email: str
+    display_name: Optional[str] = None
+    bio: Optional[str] = None
+    avatar_url: Optional[str] = None
+    extropy_balance: Decimal = Decimal("0.00000000")
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    last_login_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class CardModel(BaseModel):
+    """Pydantic model for content cards"""
+
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    user_id: str
+    title: str
+    body: str
+    tags: List[str] = Field(default_factory=list)
+    privacy_level: str
+    category: str
+    source_platform: Optional[str] = None
+    source_url: Optional[str] = None
+    content_id: Optional[str] = None
+    parent_card_id: Optional[str] = None
+    related_card_ids: List[str] = Field(default_factory=list)
+    is_published: bool = False
+    published_url: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    published_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ExtropyLedgerModel(BaseModel):
+    """Pydantic model for $EXTROPY transaction ledger entries"""
+
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    from_user_id: Optional[str] = None
+    to_user_id: Optional[str] = None
+    amount: Decimal
+    transaction_type: str
+    card_id: Optional[str] = None
+    attribution_id: Optional[str] = None
+    from_user_balance_after: Optional[Decimal] = None
+    to_user_balance_after: Optional[Decimal] = None
+    description: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Config:
+        from_attributes = True
+
+
+class AttributionModel(BaseModel):
+    """Pydantic model for card attributions"""
+
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    source_card_id: str
+    target_card_id: str
+    attribution_type: str
+    context: Optional[str] = None
+    excerpt: Optional[str] = None
+    extropy_transferred: Decimal = Decimal("0.00000000")
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Config:
         from_attributes = True
