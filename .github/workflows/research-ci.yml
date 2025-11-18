@@ -1,0 +1,89 @@
+name: Research CI
+
+on:
+  push:
+    branches: [research]
+    paths:
+      - 'research/**'
+      - '.github/workflows/research-ci.yml'
+  pull_request:
+    branches: [research]
+
+jobs:
+  test:
+    name: Test (Python + FastAPI)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: research/backend
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_research
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+      - name: Create virtual environment
+        run: uv venv
+
+      - name: Install dependencies
+        run: |
+          source .venv/bin/activate
+          uv pip install -r requirements.txt
+          uv pip install pytest pytest-cov ruff mypy
+
+      - name: Lint (ruff)
+        run: |
+          source .venv/bin/activate
+          ruff check .
+
+      - name: Format check (ruff)
+        run: |
+          source .venv/bin/activate
+          ruff format --check .
+
+      - name: Type check (mypy)
+        run: |
+          source .venv/bin/activate
+          mypy .
+
+      - name: Test
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_research
+        run: |
+          source .venv/bin/activate
+          pytest --cov=. --cov-report=term-missing
+
+      - name: Comment on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue_number = context.payload.issue?.number ||
+                                context.payload.pull_request?.number;
+            if (issue_number) {
+              github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue_number,
+                body: `❌ **Research CI Failed**\n\nBranch: \`research\`\nWorkflow: Python + FastAPI\n\n[View logs](${context.payload.repository.html_url}/actions/runs/${context.runId})`
+              });
+            }
