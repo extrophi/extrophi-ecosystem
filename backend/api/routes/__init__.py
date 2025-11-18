@@ -3,6 +3,7 @@
 from backend.api.routes.analyze import router as analyze_router
 from backend.api.routes.api_keys import router as api_keys_router
 from backend.api.routes.attributions import router as attributions_router
+from backend.api.routes.audit import router as audit_router
 from backend.api.routes.health import router as health_router
 from backend.api.routes.publish import router as publish_router
 from backend.api.routes.query import router as query_router
@@ -18,4 +19,5 @@ __all__ = [
     "tokens_router",
     "publish_router",
     "attributions_router",
+    "audit_router",
 ]
