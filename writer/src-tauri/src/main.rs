@@ -462,6 +462,11 @@ fn main() {
             // Language Preference Commands (Issue #12)
             commands::get_language_preference,
             commands::set_language_preference,
+            // Git Publish Commands (Wave 2 - ZETA)
+            commands::git_init_repository,
+            commands::git_get_publish_status,
+            commands::git_publish_cards,
+            commands::git_get_publishable_count,
             // Model Manager Commands
             services::model_manager::get_available_models,
             services::model_manager::get_installed_models,

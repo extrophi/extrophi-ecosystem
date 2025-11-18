@@ -8,6 +8,7 @@ from backend.api.routes import (
     api_keys_router,
     attributions_router,
     health_router,
+    publish_router,
     query_router,
     scrape_router,
     tokens_router,
@@ -28,6 +29,7 @@ app.include_router(analyze_router)
 app.include_router(query_router)
 app.include_router(api_keys_router)
 app.include_router(tokens_router)
+app.include_router(publish_router)
 app.include_router(attributions_router)
 
 
