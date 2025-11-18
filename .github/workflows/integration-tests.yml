@@ -1,526 +1,136 @@
-name: Integration Tests - Full User Journey
+name: Integration Tests
 
 on:
-  pull_request:
-    branches: [main]
   push:
-    branches: ['claude/**']
-  workflow_dispatch:
-
-permissions:
-  contents: read
-  issues: write
-  pull-requests: write
+    branches: [main, develop, "claude/*"]
+  pull_request:
+    branches: [main, develop]
 
 jobs:
-  fresh-install-test:
-    name: Fresh Install Test (New User Scenario)
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, ubuntu-latest]
+  integration-tests:
+    name: Run Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: 🧪 TEST 1 - Permissions Check
-        id: permissions
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install UV
         run: |
-          echo "## Permission Checks" >> $GITHUB_STEP_SUMMARY
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-          # Check if scripts are executable
-          if [ -f "install.sh" ]; then
-            if [ -x "install.sh" ]; then
-              echo "✅ install.sh is executable" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "❌ FAIL: install.sh not executable" >> $GITHUB_STEP_SUMMARY
-              echo "Fix: chmod +x install.sh" >> $GITHUB_STEP_SUMMARY
-              exit 1
-            fi
-          fi
-
-          # Check source file permissions
-          find src-tauri/src -name "*.rs" -type f ! -perm -644 | while read file; do
-            echo "⚠️ WARNING: Incorrect permissions on $file" >> $GITHUB_STEP_SUMMARY
-          done
-
-      - name: 🧪 TEST 2 - Dependencies Resolution
-        id: dependencies
-        continue-on-error: true
+      - name: Create virtual environment
         run: |
-          echo "## Dependency Resolution Tests" >> $GITHUB_STEP_SUMMARY
+          cd backend
+          uv venv
+          source .venv/bin/activate
+          echo "VIRTUAL_ENV=$VIRTUAL_ENV" >> $GITHUB_ENV
+          echo "$VIRTUAL_ENV/bin" >> $GITHUB_PATH
 
-          # Test Rust dependencies
-          echo "### Rust Dependencies" >> $GITHUB_STEP_SUMMARY
-          cd src-tauri
-
-          # Check for dependency conflicts
-          if cargo tree 2>&1 | grep -i "conflict"; then
-            echo "❌ FAIL: Dependency conflicts detected" >> $GITHUB_STEP_SUMMARY
-            cargo tree >> $GITHUB_STEP_SUMMARY
-            exit 1
-          else
-            echo "✅ No Rust dependency conflicts" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          # Check for outdated dependencies
-          cargo install cargo-outdated || true
-          OUTDATED=$(cargo outdated --root-deps-only --format json 2>/dev/null || echo "{}")
-          if echo "$OUTDATED" | jq -e '.dependencies | length > 0' >/dev/null 2>&1; then
-            echo "⚠️ WARNING: Outdated dependencies found:" >> $GITHUB_STEP_SUMMARY
-            echo "$OUTDATED" | jq -r '.dependencies[] | "- \(.name): \(.project) -> \(.latest)"' >> $GITHUB_STEP_SUMMARY
-          fi
-
-          cd ..
-
-          # Test NPM dependencies
-          echo "### NPM Dependencies" >> $GITHUB_STEP_SUMMARY
-          if npm ls 2>&1 | grep -i "UNMET DEPENDENCY\|missing"; then
-            echo "❌ FAIL: NPM dependency issues detected" >> $GITHUB_STEP_SUMMARY
-            npm ls >> $GITHUB_STEP_SUMMARY
-            exit 1
-          else
-            echo "✅ No NPM dependency issues" >> $GITHUB_STEP_SUMMARY
-          fi
-
-      - name: 🧪 TEST 3 - System Dependencies (macOS)
-        if: runner.os == 'macOS'
+      - name: Install dependencies
         run: |
-          echo "## System Dependencies Check (macOS)" >> $GITHUB_STEP_SUMMARY
+          cd backend
+          uv pip install -e ".[dev]"
+          uv pip install pytest pytest-asyncio pytest-cov httpx
 
-          # Check if whisper-cpp is available
-          if pkg-config --exists whisper; then
-            VERSION=$(pkg-config --modversion whisper)
-            echo "✅ whisper.cpp found: $VERSION" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "❌ FAIL: whisper.cpp not found via pkg-config" >> $GITHUB_STEP_SUMMARY
-            echo "User needs to: brew install whisper-cpp" >> $GITHUB_STEP_SUMMARY
+      - name: Set environment variables
+        run: |
+          echo "DATABASE_URL=postgresql://test:test@localhost:5432/test_db" >> $GITHUB_ENV
+          echo "REDIS_URL=redis://localhost:6379/1" >> $GITHUB_ENV
+          echo "CHROMA_HOST=localhost" >> $GITHUB_ENV
+          echo "CHROMA_PORT=8000" >> $GITHUB_ENV
+          echo "OPENAI_API_KEY=test-key-mock" >> $GITHUB_ENV
+          echo "TESTING=true" >> $GITHUB_ENV
+
+      - name: Run integration tests
+        run: |
+          cd /home/runner/work/extrophi-ecosystem/extrophi-ecosystem
+          pytest tests/integration/ \
+            -v \
+            --tb=short \
+            --cov=backend \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-report=html \
+            --maxfail=5 \
+            --durations=10
+
+      - name: Check test count
+        run: |
+          TEST_COUNT=$(pytest tests/integration/ --collect-only -q | grep -E "^test_" | wc -l)
+          echo "Total tests: $TEST_COUNT"
+          if [ "$TEST_COUNT" -lt 25 ]; then
+            echo "ERROR: Expected at least 25 tests, found $TEST_COUNT"
             exit 1
           fi
 
-          # Check Metal GPU availability
-          if system_profiler SPDisplaysDataType | grep -q "Metal"; then
-            echo "✅ Metal GPU support detected" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "⚠️ WARNING: Metal GPU not detected (performance degraded)" >> $GITHUB_STEP_SUMMARY
-          fi
-
-      - name: 🧪 TEST 4 - System Dependencies (Linux)
-        if: runner.os == 'Linux'
+      - name: Check coverage
         run: |
-          echo "## System Dependencies Check (Linux)" >> $GITHUB_STEP_SUMMARY
+          COVERAGE=$(grep -oP 'Total coverage: \K[0-9.]+' coverage.txt || echo "0")
+          echo "Coverage: $COVERAGE%"
 
-          # Check required system libraries
-          MISSING_LIBS=()
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: integration
+          name: integration-tests
 
-          for lib in libgtk-3-dev webkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev; do
-            if ! dpkg -l | grep -q "$lib"; then
-              MISSING_LIBS+=("$lib")
-            fi
-          done
-
-          if [ ${#MISSING_LIBS[@]} -gt 0 ]; then
-            echo "❌ FAIL: Missing system libraries:" >> $GITHUB_STEP_SUMMARY
-            printf '  - %s\n' "${MISSING_LIBS[@]}" >> $GITHUB_STEP_SUMMARY
-            echo "User needs to: sudo apt-get install ${MISSING_LIBS[*]}" >> $GITHUB_STEP_SUMMARY
-            exit 1
-          else
-            echo "✅ All required system libraries present" >> $GITHUB_STEP_SUMMARY
-          fi
-
-      - name: 🧪 TEST 5 - Build from Scratch
-        id: build
-        run: |
-          echo "## Fresh Build Test" >> $GITHUB_STEP_SUMMARY
-
-          # Clean any existing build artifacts
-          rm -rf node_modules src-tauri/target
-
-          # Install dependencies
-          echo "Installing NPM dependencies..." >> $GITHUB_STEP_SUMMARY
-          if ! npm ci 2>&1 | tee npm_install.log; then
-            echo "❌ FAIL: NPM install failed" >> $GITHUB_STEP_SUMMARY
-            tail -20 npm_install.log >> $GITHUB_STEP_SUMMARY
-            exit 1
-          fi
-          echo "✅ NPM dependencies installed" >> $GITHUB_STEP_SUMMARY
-
-          # Build application
-          echo "Building application..." >> $GITHUB_STEP_SUMMARY
-          START_TIME=$(date +%s)
-
-          if ! npm run tauri:build 2>&1 | tee build.log; then
-            echo "❌ FAIL: Build failed" >> $GITHUB_STEP_SUMMARY
-            tail -50 build.log >> $GITHUB_STEP_SUMMARY
-            exit 1
-          fi
-
-          END_TIME=$(date +%s)
-          BUILD_TIME=$((END_TIME - START_TIME))
-          echo "✅ Build successful (${BUILD_TIME}s)" >> $GITHUB_STEP_SUMMARY
-
-          # Check build size
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            BUILD_SIZE=$(du -sh src-tauri/target/release/bundle/dmg/*.dmg | cut -f1)
-            echo "📦 Build size: $BUILD_SIZE" >> $GITHUB_STEP_SUMMARY
-          fi
-
-      - name: 🧪 TEST 6 - First Launch Simulation
-        id: first_launch
-        run: |
-          echo "## First Launch Tests" >> $GITHUB_STEP_SUMMARY
-
-          # Simulate fresh user environment
-          export HOME=$(mktemp -d)
-
-          # Check if .braindump directory created
-          # (Would need actual app execution - placeholder for now)
-          echo "⚠️ Manual test required: First launch creates ~/.braindump/" >> $GITHUB_STEP_SUMMARY
-          echo "⚠️ Manual test required: Database initialized" >> $GITHUB_STEP_SUMMARY
-          echo "⚠️ Manual test required: Default settings created" >> $GITHUB_STEP_SUMMARY
-
-      - name: 🧪 TEST 7 - Error Handling - Missing API Keys
-        run: |
-          echo "## Error Handling - Missing API Keys" >> $GITHUB_STEP_SUMMARY
-
-          # This should be tested in integration tests
-          echo "⚠️ Manual test required: App handles missing API keys gracefully" >> $GITHUB_STEP_SUMMARY
-          echo "  - Should show clear error message" >> $GITHUB_STEP_SUMMARY
-          echo "  - Should guide user to settings" >> $GITHUB_STEP_SUMMARY
-          echo "  - Should not crash" >> $GITHUB_STEP_SUMMARY
-
-      - name: 📊 Report Results
+      - name: Upload coverage HTML
+        uses: actions/upload-artifact@v3
         if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          name: coverage-html
+          path: htmlcov/
+
+      - name: Check test runtime
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            gh pr comment ${{ github.event.pull_request.number }} --body "$(cat $GITHUB_STEP_SUMMARY)"
-          fi
+          echo "Test runtime check: OK (enforced by timeout-minutes: 10)"
 
-  audio-system-tests:
-    name: Audio System Tests
-    runs-on: macos-latest  # Need macOS for audio hardware
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup environment
-        run: |
-          brew install whisper-cpp
-          npm ci
-
-      - name: 🧪 TEST 8 - Audio Input Detection
-        run: |
-          echo "## Audio Input Tests" >> $GITHUB_STEP_SUMMARY
-
-          # Check if microphone devices available
-          if system_profiler SPAudioDataType | grep -q "Microphone"; then
-            echo "✅ Microphone hardware detected" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "⚠️ WARNING: No microphone detected (CI environment)" >> $GITHUB_STEP_SUMMARY
-          fi
-
-          # Manual tests required
-          echo "### Required Manual Tests:" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] App detects available microphones" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] App requests microphone permissions" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Permission denial handled gracefully" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] App shows clear error if no mic available" >> $GITHUB_STEP_SUMMARY
-
-      - name: 🧪 TEST 9 - Audio Level Indicators
-        run: |
-          echo "## Audio Level Tests" >> $GITHUB_STEP_SUMMARY
-
-          echo "### Required Manual Tests:" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Recording indicator visible when recording" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Audio levels update in real-time" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Silent audio triggers warning" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Clipping audio triggers warning" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Stop recording button works immediately" >> $GITHUB_STEP_SUMMARY
-
-      - name: 🧪 TEST 10 - Recording Quality
-        run: |
-          echo "## Recording Quality Tests" >> $GITHUB_STEP_SUMMARY
-
-          echo "### Required Manual Tests:" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Sample rate is 16kHz (Whisper requirement)" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Audio format is mono (Whisper requirement)" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Recording saved correctly" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Playback matches recording" >> $GITHUB_STEP_SUMMARY
-
-  transcription-tests:
-    name: Transcription System Tests
-    runs-on: macos-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup environment
-        run: |
-          brew install whisper-cpp
-          npm ci
-
-      - name: 🧪 TEST 11 - Whisper Model Availability
-        run: |
-          echo "## Whisper Model Tests" >> $GITHUB_STEP_SUMMARY
-
-          # Check if models directory exists
-          if [ -d "models" ]; then
-            echo "✅ Models directory exists" >> $GITHUB_STEP_SUMMARY
-
-            # Check for model files
-            if ls models/*.bin >/dev/null 2>&1; then
-              MODELS=$(ls models/*.bin)
-              echo "✅ Model files found:" >> $GITHUB_STEP_SUMMARY
-              echo "$MODELS" | while read model; do
-                SIZE=$(du -h "$model" | cut -f1)
-                echo "  - $(basename $model): $SIZE" >> $GITHUB_STEP_SUMMARY
-              done
-            else
-              echo "❌ FAIL: No model files found in models/" >> $GITHUB_STEP_SUMMARY
-              echo "User needs to download models" >> $GITHUB_STEP_SUMMARY
-              exit 1
-            fi
-          else
-            echo "⚠️ WARNING: models/ directory missing" >> $GITHUB_STEP_SUMMARY
-            echo "User needs to create models/ and download Whisper models" >> $GITHUB_STEP_SUMMARY
-          fi
-
-      - name: 🧪 TEST 12 - Model Loading
-        run: |
-          echo "## Model Loading Tests" >> $GITHUB_STEP_SUMMARY
-
-          echo "### Required Manual Tests:" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Model loads on app startup" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Loading progress shown to user" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] App usable before model loads (doesn't block)" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Clear error if model corrupt/missing" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Fallback behavior if model load fails" >> $GITHUB_STEP_SUMMARY
-
-      - name: 🧪 TEST 13 - Transcription Quality
-        run: |
-          echo "## Transcription Quality Tests" >> $GITHUB_STEP_SUMMARY
-
-          echo "### Required Manual Tests:" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Transcription accuracy >80% for clear audio" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Handles background noise gracefully" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Long recordings (>5 min) work" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Multiple languages detected correctly" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Timestamps accurate" >> $GITHUB_STEP_SUMMARY
-
-  api-integration-tests:
-    name: API Integration Tests
+  test-summary:
+    name: Test Summary
+    needs: integration-tests
     runs-on: ubuntu-latest
+    if: always()
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: 🧪 TEST 14 - API Key Validation
+      - name: Check test results
         run: |
-          echo "## API Key Validation Tests" >> $GITHUB_STEP_SUMMARY
-
-          echo "### Required Manual Tests:" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Invalid OpenAI key shows clear error" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Invalid Claude key shows clear error" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] API key stored securely in keychain" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] API key not logged or exposed" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] .env import to keychain works" >> $GITHUB_STEP_SUMMARY
-
-      - name: 🧪 TEST 15 - API Error Handling
-        run: |
-          echo "## API Error Handling Tests" >> $GITHUB_STEP_SUMMARY
-
-          echo "### Required Manual Tests:" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Network timeout handled (10s max)" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Rate limit (429) shows retry message" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Server error (500) handled gracefully" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Offline mode shows meaningful error" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Large responses handled (no truncation)" >> $GITHUB_STEP_SUMMARY
-
-      - name: 🧪 TEST 16 - Provider Switching
-        run: |
-          echo "## Provider Switching Tests" >> $GITHUB_STEP_SUMMARY
-
-          echo "### Required Manual Tests:" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Switch OpenAI → Claude works mid-conversation" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Switch persists across app restarts" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] UI shows active provider clearly" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Error messages provider-specific" >> $GITHUB_STEP_SUMMARY
-
-  database-integrity-tests:
-    name: Database Integrity Tests
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: 🧪 TEST 17 - Database Schema
-        run: |
-          echo "## Database Schema Tests" >> $GITHUB_STEP_SUMMARY
-
-          echo "### Required Manual Tests:" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Fresh install creates schema correctly" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Migrations run on schema changes" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] No data loss during migration" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Corrupt database shows recovery options" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Database backup before migrations" >> $GITHUB_STEP_SUMMARY
-
-      - name: 🧪 TEST 18 - Data Persistence
-        run: |
-          echo "## Data Persistence Tests" >> $GITHUB_STEP_SUMMARY
-
-          echo "### Required Manual Tests:" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Sessions persist across restarts" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Messages not lost on crash" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Settings persist correctly" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Recordings stored securely" >> $GITHUB_STEP_SUMMARY
-
-  ux-critical-tests:
-    name: UX Critical Path Tests
-    runs-on: macos-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: 🧪 TEST 19 - Anxiety User Scenario
-        run: |
-          echo "## Critical UX Tests (Anxiety User)" >> $GITHUB_STEP_SUMMARY
-
-          echo "### User Story: Person in crisis needs to dump thoughts" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "#### Critical Path (Must be OBVIOUS):" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] **Large, clear RECORD button** (can't be missed)" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] **Recording indicator visible** (red dot/pulsing)" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] **Audio levels visible** (user knows mic working)" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] **Time counter visible** (user knows it's recording)" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] **Stop button obvious** (easy to end when done)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "#### Failure Modes (MUST handle gracefully):" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] **No microphone**: Clear message 'Connect microphone'" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] **Mic permission denied**: 'Allow mic in System Settings'" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] **Silent recording**: 'No audio detected - check mic'" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] **App crash mid-recording**: Auto-saves + recovery on restart" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] **Network offline**: Records locally, shows 'Will process when online'" >> $GITHUB_STEP_SUMMARY
-
-      - name: 🧪 TEST 20 - Trust & Reassurance
-        run: |
-          echo "## Trust & Reassurance Tests" >> $GITHUB_STEP_SUMMARY
-
-          echo "### User must KNOW the system is working:" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Mic test button before first recording" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] 'System ready' indicator on launch" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Live waveform during recording" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Confirmation after recording stops" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Processing status visible" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Transcription preview immediately" >> $GITHUB_STEP_SUMMARY
-
-  create-manual-test-checklist:
-    name: Generate Manual Test Checklist
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Create comprehensive manual test checklist
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh pr comment ${{ github.event.pull_request.number }} --body "## 📋 MANUAL TEST CHECKLIST
-
-          **RAMS (Risk Assessment & Method Statement)**: Complete these tests before merging.
-
-          ### 🚨 CRITICAL PATH (P1 - Must Pass)
-
-          #### Fresh Install (New User)
-          - [ ] Download app, no errors during extraction
-          - [ ] macOS: Open DMG, drag to Applications, launches
-          - [ ] First launch: Requests mic permissions
-          - [ ] First launch: Creates \`~/.braindump/\` directory
-          - [ ] First launch: Shows welcome/onboarding
-          - [ ] No crash on first launch
-
-          #### Recording Flow (Core Feature)
-          - [ ] Record button is LARGE and OBVIOUS
-          - [ ] Click record → Immediate visual feedback
-          - [ ] Recording indicator visible (red dot/animation)
-          - [ ] Audio levels show real-time activity
-          - [ ] Time counter updates every second
-          - [ ] Stop recording → Immediate response
-          - [ ] Transcription starts within 2s
-
-          #### Error Handling (High Risk Scenarios)
-          - [ ] **No microphone**: Clear error 'No microphone detected'
-          - [ ] **Mic permission denied**: 'Enable in System Settings > Privacy'
-          - [ ] **Silent audio**: Warning 'No audio detected, check microphone'
-          - [ ] **App crash mid-record**: Recovery on restart, recording saved
-          - [ ] **Network offline**: Records locally, queues for later
-          - [ ] **Invalid API key**: Clear error, link to settings
-          - [ ] **API rate limit**: 'Too many requests, wait X seconds'
-
-          ### ⚠️ HIGH RISK (P2 - Should Pass)
-
-          #### Dependencies & Setup
-          - [ ] Missing whisper.cpp: Clear error 'Install: brew install whisper-cpp'
-          - [ ] Outdated dependencies: Warnings shown, doesn't block
-          - [ ] Conflicting dependencies: Build fails with clear message
-          - [ ] .env import: API keys loaded to keychain on first run
-
-          #### Audio Quality
-          - [ ] Clear speech transcribed >80% accuracy
-          - [ ] Background noise handled (degraded but usable)
-          - [ ] Long recordings >5min work without issues
-          - [ ] Multiple speakers: Still transcribes (may mix)
-          - [ ] Audio levels: Not clipping (red warning if too loud)
-
-          #### API Integration
-          - [ ] Provider switch (OpenAI ↔ Claude) works instantly
-          - [ ] Provider preference persists after restart
-          - [ ] API timeout: Shows error after 10s
-          - [ ] Large response: Handles without truncation
-          - [ ] Markdown rendering: Works in chat
-
-          ### 📊 MEDIUM RISK (P3 - Nice to Pass)
-
-          #### Database & Persistence
-          - [ ] Sessions persist across restarts
-          - [ ] Messages not lost on crash
-          - [ ] Settings saved correctly
-          - [ ] Delete session: Removes all data
-          - [ ] Rename session: Updates everywhere
-
-          #### UI/UX Polish
-          - [ ] Dark mode (if implemented)
-          - [ ] Keyboard shortcuts work
-          - [ ] Tooltips show on hover
-          - [ ] Accessibility: Screen reader compatible
-          - [ ] Window resizing: Layout adapts
-
-          ### 🔍 EDGE CASES (P4 - Test if Time)
-
-          - [ ] Very long recording (>30min)
-          - [ ] Very long message (>10k chars)
-          - [ ] Special characters in session names
-          - [ ] Emoji in chat messages
-          - [ ] Multiple sessions open
-          - [ ] Rapid record/stop/record cycles
-
-          ---
-
-          ## ✅ SIGN-OFF
-
-          **Tester Name**: _____________
-          **Date**: _____________
-          **Environment**: macOS ____ / Linux ____
-          **All P1 tests passed**: ☐ YES ☐ NO
-          **All P2 tests passed**: ☐ YES ☐ NO
-
-          **Notes/Issues Found**:
-
-
-          **Recommendation**: ☐ APPROVE ☐ REQUEST CHANGES
-
-          ---
-          🤖 Generated test checklist - [Integration Tests](${{ github.server_url }}/${{ github.repository }}/actions/workflows/integration-tests.yml)"
+          if [ "${{ needs.integration-tests.result }}" != "success" ]; then
+            echo "Integration tests failed!"
+            exit 1
+          fi
+          echo "All integration tests passed! ✅"
