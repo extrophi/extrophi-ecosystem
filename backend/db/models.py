@@ -7,7 +7,7 @@ from uuid import uuid4, UUID as PyUUID
 
 from pgvector.sqlalchemy import Vector
 from pydantic import BaseModel, Field
-from sqlalchemy import DECIMAL, Boolean, Column, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import DECIMAL, BigInteger, Boolean, Column, DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import declarative_base, relationship
 
