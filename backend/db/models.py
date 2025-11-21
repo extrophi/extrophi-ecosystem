@@ -7,7 +7,7 @@ from uuid import uuid4, UUID as PyUUID
 
 from pgvector.sqlalchemy import Vector
 from pydantic import BaseModel, Field
-from sqlalchemy import DECIMAL, BigInteger, Boolean, Column, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import DECIMAL, BigInteger, Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -203,7 +203,7 @@ class APIKeyORM(Base):
     expires_at = Column(DateTime, nullable=True)
 
     # Metadata
-    metadata = Column(JSONB, nullable=True, default={})
+    extra_metadata = Column(JSONB, nullable=True, default={})
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -246,7 +246,7 @@ class UserORM(Base):
     api_key_hash = Column(String(255), nullable=True)
 
     # Metadata
-    metadata = Column(JSONB, nullable=True, default={})
+    extra_metadata = Column(JSONB, nullable=True, default={})
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -307,7 +307,7 @@ class CardORM(Base):
     published_url = Column(Text, nullable=True)
 
     # Metadata
-    metadata = Column(JSONB, nullable=True, default={})
+    extra_metadata = Column(JSONB, nullable=True, default={})
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -364,7 +364,7 @@ class ExtropyLedgerORM(Base):
     description = Column(Text, nullable=True)
 
     # Metadata
-    metadata = Column(JSONB, nullable=True, default={})
+    extra_metadata = Column(JSONB, nullable=True, default={})
 
     # Timestamp (immutable - no updates allowed)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -411,7 +411,7 @@ class AttributionORM(Base):
     extropy_transferred = Column(DECIMAL(20, 8), default=Decimal("0.00000000"))
 
     # Metadata
-    metadata = Column(JSONB, nullable=True, default={})
+    extra_metadata = Column(JSONB, nullable=True, default={})
 
     # Timestamp
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -448,7 +448,7 @@ class AuthorModel(BaseModel):
     authority_score: Optional[str] = None
     profile_url: Optional[str] = None
     avatar_url: Optional[str] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    extra_metadata: Dict[str, Any] = Field(default_factory=dict)
 
     class Config:
         from_attributes = True
@@ -508,7 +508,7 @@ class UnifiedContent(BaseModel):
     scraped_at: datetime = Field(default_factory=datetime.utcnow)
     analyzed_at: Optional[datetime] = None
     updated_at: datetime = Field(default_factory=datetime.utcnow)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    extra_metadata: Dict[str, Any] = Field(default_factory=dict)
 
     class Config:
         from_attributes = True
@@ -561,7 +561,7 @@ class UserModel(BaseModel):
     bio: Optional[str] = None
     avatar_url: Optional[str] = None
     extropy_balance: Decimal = Decimal("0.00000000")
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    extra_metadata: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     last_login_at: Optional[datetime] = None
@@ -587,7 +587,7 @@ class CardModel(BaseModel):
     related_card_ids: List[str] = Field(default_factory=list)
     is_published: bool = False
     published_url: Optional[str] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    extra_metadata: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     published_at: Optional[datetime] = None
@@ -609,7 +609,7 @@ class ExtropyLedgerModel(BaseModel):
     from_user_balance_after: Optional[Decimal] = None
     to_user_balance_after: Optional[Decimal] = None
     description: Optional[str] = None
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    extra_metadata: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Config:
@@ -626,8 +626,65 @@ class AttributionModel(BaseModel):
     context: Optional[str] = None
     excerpt: Optional[str] = None
     extropy_transferred: Decimal = Decimal("0.00000000")
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    extra_metadata: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Config:
         from_attributes = True
+
+
+# ============================================================================
+# API Key Management Schemas
+# ============================================================================
+
+
+class APIKeyCreateRequest(BaseModel):
+    """Request model for creating a new API key"""
+
+    key_name: str
+    expires_at: Optional[datetime] = None
+    rate_limit_requests: Optional[int] = 1000
+    rate_limit_window_seconds: Optional[int] = 3600
+
+
+class APIKeyModel(BaseModel):
+    """Pydantic model for API key (without sensitive data)"""
+
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    user_id: str
+    key_name: str
+    key_prefix: str
+    is_active: bool = True
+    is_revoked: bool = False
+    rate_limit_requests: int = 1000
+    rate_limit_window_seconds: int = 3600
+    current_usage_count: int = 0
+    rate_limit_window_start: Optional[datetime] = None
+    last_used_at: Optional[datetime] = None
+    request_count: int = 0
+    expires_at: Optional[datetime] = None
+    extra_metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    revoked_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class APIKeyCreateResponse(BaseModel):
+    """Response model for API key creation (includes full key once)"""
+
+    id: str
+    key_name: str
+    key_prefix: str
+    api_key: str  # Full key only returned once on creation
+    expires_at: Optional[datetime] = None
+    created_at: datetime
+
+
+class APIKeyListResponse(BaseModel):
+    """Response model for listing API keys"""
+
+    keys: List[APIKeyModel]
+    total: int

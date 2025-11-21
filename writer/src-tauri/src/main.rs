@@ -11,6 +11,9 @@ use tauri::Emitter;
 
 mod commands;
 
+#[cfg(test)]
+mod commands_test;
+
 fn import_env_keys_to_keychain() {
     use keyring::Entry;
 
@@ -255,6 +258,50 @@ fn main() {
                         let _ = response_tx.send(AudioResponse::PeakLevel(0.0));
                     }
                 }
+                AudioCommand::PauseRecording => {
+                    braindump::logging::info("Audio", "PauseRecording command received");
+
+                    if let Some(rec) = &mut recorder {
+                        match rec.pause() {
+                            Ok(()) => {
+                                braindump::logging::info("Audio", "Recording paused successfully");
+                                let _ = response_tx.send(AudioResponse::RecordingPaused);
+                            }
+                            Err(e) => {
+                                braindump::logging::error(
+                                    "Audio",
+                                    &format!("Failed to pause recording: {}", e),
+                                );
+                                let _ = response_tx.send(AudioResponse::Error(e.to_string()));
+                            }
+                        }
+                    } else {
+                        braindump::logging::warn("Audio", "No active recording to pause");
+                        let _ = response_tx.send(AudioResponse::Error("Not recording".to_string()));
+                    }
+                }
+                AudioCommand::ResumeRecording => {
+                    braindump::logging::info("Audio", "ResumeRecording command received");
+
+                    if let Some(rec) = &mut recorder {
+                        match rec.resume() {
+                            Ok(()) => {
+                                braindump::logging::info("Audio", "Recording resumed successfully");
+                                let _ = response_tx.send(AudioResponse::RecordingResumed);
+                            }
+                            Err(e) => {
+                                braindump::logging::error(
+                                    "Audio",
+                                    &format!("Failed to resume recording: {}", e),
+                                );
+                                let _ = response_tx.send(AudioResponse::Error(e.to_string()));
+                            }
+                        }
+                    } else {
+                        braindump::logging::warn("Audio", "No active recording to resume");
+                        let _ = response_tx.send(AudioResponse::Error("Not recording".to_string()));
+                    }
+                }
                 AudioCommand::Shutdown => {
                     braindump::logging::info("Audio", "Audio thread shutting down");
                     break;
@@ -391,6 +438,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::start_recording,
             commands::stop_recording,
+            commands::pause_recording,
+            commands::resume_recording,
             commands::get_transcripts,
             commands::get_peak_level,
             commands::is_model_loaded,
@@ -418,6 +467,10 @@ fn main() {
             commands::open_openai_auth_browser,
             // Export Commands
             commands::export_session,
+            commands::export_session_pdf,
+            commands::export_session_docx,
+            commands::export_session_html,
+            commands::export_batch,
             // File-based Prompt Template Commands
             commands::load_prompt,
             commands::list_prompts,
@@ -467,10 +520,12 @@ fn main() {
             commands::git_get_publish_status,
             commands::git_publish_cards,
             commands::git_get_publishable_count,
-            // Research API Integration Commands
+            // Research API Integration Commands (Issue #126)
             commands::enrich_content,
             commands::check_enrichment_status,
             commands::test_research_connection,
+            // Search Commands (OMICRON-2 Issue #75)
+            commands::search_all,
             // Model Manager Commands
             services::model_manager::get_available_models,
             services::model_manager::get_installed_models,

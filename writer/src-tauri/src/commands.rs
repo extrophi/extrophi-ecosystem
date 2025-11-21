@@ -377,6 +377,44 @@ pub async fn get_peak_level(state: State<'_, AppState>) -> Result<f32, BrainDump
 }
 
 #[tauri::command]
+pub async fn pause_recording(state: State<'_, AppState>) -> Result<String, BrainDumpError> {
+    let (response_tx, response_rx) = mpsc::channel();
+
+    state
+        .audio_tx
+        .send((AudioCommand::PauseRecording, response_tx))
+        .map_err(|e| BrainDumpError::Audio(AudioError::DeviceInitFailed(e.to_string())))?;
+
+    match response_rx
+        .recv()
+        .map_err(|e| BrainDumpError::Audio(AudioError::DeviceInitFailed(e.to_string())))?
+    {
+        AudioResponse::RecordingPaused => Ok("Recording paused".to_string()),
+        AudioResponse::Error(e) => Err(BrainDumpError::Audio(AudioError::RecordingFailed(e))),
+        _ => Err(BrainDumpError::Other("Unexpected response".to_string())),
+    }
+}
+
+#[tauri::command]
+pub async fn resume_recording(state: State<'_, AppState>) -> Result<String, BrainDumpError> {
+    let (response_tx, response_rx) = mpsc::channel();
+
+    state
+        .audio_tx
+        .send((AudioCommand::ResumeRecording, response_tx))
+        .map_err(|e| BrainDumpError::Audio(AudioError::DeviceInitFailed(e.to_string())))?;
+
+    match response_rx
+        .recv()
+        .map_err(|e| BrainDumpError::Audio(AudioError::DeviceInitFailed(e.to_string())))?
+    {
+        AudioResponse::RecordingResumed => Ok("Recording resumed".to_string()),
+        AudioResponse::Error(e) => Err(BrainDumpError::Audio(AudioError::RecordingFailed(e))),
+        _ => Err(BrainDumpError::Other("Unexpected response".to_string())),
+    }
+}
+
+#[tauri::command]
 pub async fn is_model_loaded(state: State<'_, AppState>) -> Result<bool, BrainDumpError> {
     let manager = state.plugin_manager.lock();
 
@@ -697,9 +735,133 @@ pub async fn export_session(
     }
 
     // Export to markdown
-    let file_path = braindump::export::export_session_to_markdown(&session, &messages)?;
+    let file_path = braindump::export::markdown::export_session_to_markdown(&session, &messages)?;
 
     Ok(file_path.to_string_lossy().to_string())
+}
+
+/// Export chat session to PDF
+#[tauri::command]
+pub async fn export_session_pdf(
+    session_id: i64,
+    output_path: String,
+    state: State<'_, AppState>,
+) -> Result<(), BrainDumpError> {
+    use braindump::export::{pdf::PDFExporter, Exporter, ExportOptions, ExportFormat};
+
+    let db = state.db.lock();
+    let session = db.get_chat_session(session_id)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+    let messages = db.list_messages_by_session(session_id)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+    drop(db);
+
+    let exporter = PDFExporter::new();
+    let options = ExportOptions {
+        format: ExportFormat::PDF,
+        ..Default::default()
+    };
+
+    exporter.export(&session, &messages, std::path::PathBuf::from(output_path), &options)
+        .map_err(|e| BrainDumpError::Other(e))
+}
+
+/// Export chat session to DOCX
+#[tauri::command]
+pub async fn export_session_docx(
+    session_id: i64,
+    output_path: String,
+    state: State<'_, AppState>,
+) -> Result<(), BrainDumpError> {
+    use braindump::export::{docx::DocxExporter, Exporter, ExportOptions, ExportFormat};
+
+    let db = state.db.lock();
+    let session = db.get_chat_session(session_id)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+    let messages = db.list_messages_by_session(session_id)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+    drop(db);
+
+    let exporter = DocxExporter::new();
+    let options = ExportOptions {
+        format: ExportFormat::DOCX,
+        ..Default::default()
+    };
+
+    exporter.export(&session, &messages, std::path::PathBuf::from(output_path), &options)
+        .map_err(|e| BrainDumpError::Other(e))
+}
+
+/// Export chat session to HTML
+#[tauri::command]
+pub async fn export_session_html(
+    session_id: i64,
+    output_path: String,
+    template: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), BrainDumpError> {
+    use braindump::export::{html::HTMLExporter, Exporter, ExportOptions, ExportFormat};
+
+    let db = state.db.lock();
+    let session = db.get_chat_session(session_id)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+    let messages = db.list_messages_by_session(session_id)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+    drop(db);
+
+    let exporter = HTMLExporter::new();
+    let options = ExportOptions {
+        format: ExportFormat::HTML,
+        template,
+        ..Default::default()
+    };
+
+    exporter.export(&session, &messages, std::path::PathBuf::from(output_path), &options)
+        .map_err(|e| BrainDumpError::Other(e))
+}
+
+/// Export multiple sessions to a ZIP file
+#[tauri::command]
+pub async fn export_batch(
+    session_ids: Vec<i64>,
+    output_zip: String,
+    format: String,
+    state: State<'_, AppState>,
+) -> Result<(), BrainDumpError> {
+    use braindump::export::{batch::BatchExporter, ExportFormat, ExportOptions};
+
+    // Parse format
+    let export_format = match format.to_lowercase().as_str() {
+        "pdf" => ExportFormat::PDF,
+        "docx" => ExportFormat::DOCX,
+        "html" => ExportFormat::HTML,
+        "markdown" => ExportFormat::Markdown,
+        _ => return Err(BrainDumpError::Other(format!("Invalid export format: {}", format))),
+    };
+
+    // Collect sessions and their messages
+    let db = state.db.lock();
+    let mut sessions_with_messages = Vec::new();
+
+    for session_id in session_ids {
+        let session = db.get_chat_session(session_id)
+            .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+        let messages = db.list_messages_by_session(session_id)
+            .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+
+        sessions_with_messages.push((session, messages));
+    }
+    drop(db);
+
+    // Create batch exporter
+    let exporter = BatchExporter::new();
+    let options = ExportOptions {
+        format: export_format,
+        ..Default::default()
+    };
+
+    exporter.export_multiple(sessions_with_messages, std::path::PathBuf::from(output_zip), &options)
+        .map_err(|e| BrainDumpError::Other(e))
 }
 
 // ============================================================================
@@ -1486,7 +1648,7 @@ pub async fn git_get_publishable_count(state: State<'_, AppState>) -> Result<usi
 }
 
 // ============================================================================
-// Research API Integration Commands (Writer-Research Integration)
+// Research API Integration Commands (Writer-Research Integration #126)
 // ============================================================================
 
 use braindump::services::research_client::{EnrichmentRequest, ResearchClient};
@@ -1577,4 +1739,41 @@ pub async fn test_research_connection() -> Result<bool, BrainDumpError> {
             Err(e)
         }
     }
+}
+
+// ============================================================================
+// Search Commands (OMICRON-2 Issue #75)
+// ============================================================================
+
+use braindump::db::models::{SearchFilters, SearchResult};
+
+/// Search across sessions, transcripts, and messages
+#[tauri::command]
+pub async fn search_all(
+    query: String,
+    tags: Option<Vec<i64>>,
+    start_date: Option<String>,
+    end_date: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<SearchResult>, BrainDumpError> {
+    braindump::logging::info("Search", &format!("Searching for: {}", query));
+
+    if query.len() < 2 {
+        return Ok(Vec::new());
+    }
+
+    let filters = SearchFilters {
+        tags,
+        start_date,
+        end_date,
+    };
+
+    let db = state.db.lock();
+    let results = db
+        .search_all(&query, filters)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+
+    braindump::logging::info("Search", &format!("Found {} results", results.len()));
+
+    Ok(results)
 }

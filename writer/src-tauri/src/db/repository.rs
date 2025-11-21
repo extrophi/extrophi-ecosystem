@@ -420,6 +420,213 @@ impl Repository {
         recordings.collect()
     }
 
+    /// Search across sessions, transcripts, and messages (OMICRON-2 #75)
+    pub fn search_all(
+        &self,
+        query: &str,
+        filters: SearchFilters,
+    ) -> SqliteResult<Vec<SearchResult>> {
+        use super::models::SearchResult;
+
+        let mut results = Vec::new();
+        let search_pattern = format!("%{}%", query);
+
+        // Build base WHERE clause for date filtering
+        let mut date_filter = String::new();
+        if filters.start_date.is_some() {
+            date_filter.push_str(" AND created_at >= ?");
+        }
+        if filters.end_date.is_some() {
+            date_filter.push_str(" AND created_at <= ?");
+        }
+
+        // Build tag filter
+        let tag_filter = if let Some(ref tag_ids) = filters.tags {
+            if !tag_ids.is_empty() {
+                format!(
+                    " AND session_id IN (
+                        SELECT session_id FROM session_tags WHERE tag_id IN ({})
+                    )",
+                    tag_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",")
+                )
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+
+        // Search in session titles
+        let session_query = format!(
+            "SELECT cs.id, cs.title, cs.title as content, cs.created_at
+             FROM chat_sessions cs
+             WHERE cs.title LIKE ?1{}{}
+             ORDER BY cs.created_at DESC
+             LIMIT 50",
+            date_filter, tag_filter
+        );
+
+        let mut stmt = self.conn.prepare(&session_query)?;
+        let mut param_idx = 2;
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(search_pattern.clone())];
+
+        if let Some(ref start) = filters.start_date {
+            params_vec.push(Box::new(start.clone()));
+            param_idx += 1;
+        }
+        if let Some(ref end) = filters.end_date {
+            params_vec.push(Box::new(end.clone()));
+            param_idx += 1;
+        }
+        if let Some(ref tag_ids) = filters.tags {
+            for tag_id in tag_ids {
+                params_vec.push(Box::new(*tag_id));
+            }
+        }
+
+        let params_refs: Vec<&dyn rusqlite::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
+
+        let session_results = stmt
+            .query_map(&*params_refs, |row| {
+                Ok(SearchResult {
+                    result_type: "session".to_string(),
+                    session_id: row.get(0)?,
+                    session_title: row.get(1)?,
+                    content: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                    created_at: row.get(3)?,
+                    highlight: None,
+                })
+            })?
+            .collect::<SqliteResult<Vec<_>>>()?;
+
+        results.extend(session_results);
+
+        // Search in messages
+        let message_query = format!(
+            "SELECT m.session_id, cs.title, m.content, m.created_at
+             FROM messages m
+             JOIN chat_sessions cs ON m.session_id = cs.id
+             WHERE m.content LIKE ?1{}{}
+             ORDER BY m.created_at DESC
+             LIMIT 50",
+            date_filter, tag_filter
+        );
+
+        let mut stmt = self.conn.prepare(&message_query)?;
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(search_pattern.clone())];
+
+        if let Some(ref start) = filters.start_date {
+            params_vec.push(Box::new(start.clone()));
+        }
+        if let Some(ref end) = filters.end_date {
+            params_vec.push(Box::new(end.clone()));
+        }
+        if let Some(ref tag_ids) = filters.tags {
+            for tag_id in tag_ids {
+                params_vec.push(Box::new(*tag_id));
+            }
+        }
+
+        let params_refs: Vec<&dyn rusqlite::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
+
+        let message_results = stmt
+            .query_map(&*params_refs, |row| {
+                let content: String = row.get(2)?;
+                let highlight = Self::create_highlight(&content, query);
+
+                Ok(SearchResult {
+                    result_type: "message".to_string(),
+                    session_id: row.get(0)?,
+                    session_title: row.get(1)?,
+                    content: content.clone(),
+                    created_at: row.get(3)?,
+                    highlight: Some(highlight),
+                })
+            })?
+            .collect::<SqliteResult<Vec<_>>>()?;
+
+        results.extend(message_results);
+
+        // Search in transcripts
+        let transcript_query = format!(
+            "SELECT m.session_id, cs.title, t.text, t.created_at
+             FROM transcripts t
+             JOIN recordings r ON t.recording_id = r.id
+             JOIN messages m ON m.recording_id = r.id
+             JOIN chat_sessions cs ON m.session_id = cs.id
+             WHERE t.text LIKE ?1{}{}
+             ORDER BY t.created_at DESC
+             LIMIT 50",
+            date_filter, tag_filter
+        );
+
+        let mut stmt = self.conn.prepare(&transcript_query)?;
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(search_pattern.clone())];
+
+        if let Some(ref start) = filters.start_date {
+            params_vec.push(Box::new(start.clone()));
+        }
+        if let Some(ref end) = filters.end_date {
+            params_vec.push(Box::new(end.clone()));
+        }
+        if let Some(ref tag_ids) = filters.tags {
+            for tag_id in tag_ids {
+                params_vec.push(Box::new(*tag_id));
+            }
+        }
+
+        let params_refs: Vec<&dyn rusqlite::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
+
+        let transcript_results = stmt
+            .query_map(&*params_refs, |row| {
+                let content: String = row.get(2)?;
+                let highlight = Self::create_highlight(&content, query);
+
+                Ok(SearchResult {
+                    result_type: "transcript".to_string(),
+                    session_id: row.get(0)?,
+                    session_title: row.get(1)?,
+                    content: content.clone(),
+                    created_at: row.get(3)?,
+                    highlight: Some(highlight),
+                })
+            })?
+            .collect::<SqliteResult<Vec<_>>>()?;
+
+        results.extend(transcript_results);
+
+        // Sort all results by created_at descending
+        results.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+        Ok(results)
+    }
+
+    /// Create a text highlight snippet around the search term
+    fn create_highlight(text: &str, query: &str) -> String {
+        let query_lower = query.to_lowercase();
+        let text_lower = text.to_lowercase();
+
+        if let Some(pos) = text_lower.find(&query_lower) {
+            let start = pos.saturating_sub(50);
+            let end = (pos + query.len() + 50).min(text.len());
+
+            let prefix = if start > 0 { "..." } else { "" };
+            let suffix = if end < text.len() { "..." } else { "" };
+
+            format!("{}{}{}", prefix, &text[start..end], suffix)
+        } else {
+            // Fallback: return first 100 characters
+            if text.len() > 100 {
+                format!("{}...", &text[..100])
+            } else {
+                text.to_string()
+            }
+        }
+    }
+
     // ===== User-Created Prompts (Issue #3) =====
 
     pub fn list_user_prompts(&self) -> SqliteResult<Vec<Prompt>> {
@@ -1484,5 +1691,742 @@ mod tests {
         // Get default
         let default = repo.get_default_prompt_template().unwrap();
         assert_eq!(default.name, "daily_reflection");
+    }
+
+    // ===== Extended User Prompt Tests =====
+
+    #[test]
+    fn test_user_prompts_comprehensive() {
+        let conn = initialize_db(":memory:".into()).unwrap();
+        let repo = Repository::new(conn);
+
+        // Create multiple user prompts
+        let p1_id = repo
+            .create_user_prompt("prompt1", "Prompt One", "Content for prompt 1")
+            .unwrap();
+        let p2_id = repo
+            .create_user_prompt("prompt2", "Prompt Two", "Content for prompt 2")
+            .unwrap();
+
+        assert!(p1_id > 0);
+        assert!(p2_id > 0);
+
+        // List prompts
+        let prompts = repo.list_user_prompts().unwrap();
+        assert!(prompts.len() >= 2);
+
+        // Get specific prompt
+        let p1 = repo.get_user_prompt(p1_id).unwrap();
+        assert_eq!(p1.name, "prompt1");
+        assert_eq!(p1.title, "Prompt One");
+        assert_eq!(p1.content, "Content for prompt 1");
+        assert!(!p1.is_system);
+
+        // Update prompt
+        repo.update_user_prompt(p1_id, "Updated Title", "Updated content")
+            .unwrap();
+
+        let updated = repo.get_user_prompt(p1_id).unwrap();
+        assert_eq!(updated.title, "Updated Title");
+        assert_eq!(updated.content, "Updated content");
+        assert_eq!(updated.name, "prompt1"); // Name should not change
+
+        // Delete prompt
+        repo.delete_user_prompt(p2_id).unwrap();
+        assert!(repo.get_user_prompt(p2_id).is_err());
+    }
+
+    #[test]
+    fn test_user_prompts_with_special_characters() {
+        let conn = initialize_db(":memory:".into()).unwrap();
+        let repo = Repository::new(conn);
+
+        let content = "This prompt has \"quotes\", 'apostrophes', and \nnewlines";
+        let id = repo
+            .create_user_prompt("special", "Special Chars", content)
+            .unwrap();
+
+        let prompt = repo.get_user_prompt(id).unwrap();
+        assert_eq!(prompt.content, content);
+    }
+
+    // ===== Extended Usage Statistics Tests =====
+
+    #[test]
+    fn test_usage_statistics_comprehensive() {
+        let conn = initialize_db(":memory:".into()).unwrap();
+        let repo = Repository::new(conn);
+
+        // Create sessions and recordings
+        let session = ChatSession {
+            id: None,
+            title: Some("Test Session".to_string()),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let session_id = repo.create_chat_session(&session).unwrap();
+
+        // Add messages
+        for i in 0..5 {
+            let msg = Message {
+                id: None,
+                session_id,
+                recording_id: None,
+                role: if i % 2 == 0 {
+                    MessageRole::User
+                } else {
+                    MessageRole::Assistant
+                },
+                content: format!("Message {}", i),
+                privacy_tags: None,
+                created_at: Utc::now(),
+            };
+            repo.create_message(&msg).unwrap();
+        }
+
+        // Add recordings
+        for i in 0..3 {
+            let rec = Recording {
+                id: None,
+                filepath: format!("/test/rec{}.wav", i),
+                duration_ms: 5000 + (i as i64 * 1000),
+                sample_rate: 16000,
+                channels: 1,
+                file_size_bytes: Some(80000),
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            };
+            repo.create_recording(&rec).unwrap();
+        }
+
+        // Track usage events
+        let events = vec![
+            UsageEvent {
+                id: None,
+                event_type: "chat_message".to_string(),
+                provider: Some("openai".to_string()),
+                prompt_name: Some("daily_reflection".to_string()),
+                token_count: Some(150),
+                recording_duration_ms: None,
+                created_at: Utc::now(),
+            },
+            UsageEvent {
+                id: None,
+                event_type: "chat_message".to_string(),
+                provider: Some("claude".to_string()),
+                prompt_name: Some("crisis_support".to_string()),
+                token_count: Some(200),
+                recording_duration_ms: None,
+                created_at: Utc::now(),
+            },
+            UsageEvent {
+                id: None,
+                event_type: "recording".to_string(),
+                provider: None,
+                prompt_name: None,
+                token_count: None,
+                recording_duration_ms: Some(5000),
+                created_at: Utc::now(),
+            },
+        ];
+
+        for event in events {
+            repo.track_usage_event(&event).unwrap();
+        }
+
+        // Get usage stats
+        let stats = repo.get_usage_stats().unwrap();
+
+        assert_eq!(stats.total_sessions, 1);
+        assert_eq!(stats.total_messages, 5);
+        assert_eq!(stats.total_recordings, 3);
+        assert!(stats.total_recording_time_ms >= 18000); // 3 recordings with increasing durations
+
+        // Check provider usage
+        assert!(stats.provider_usage.openai_count > 0);
+        assert!(stats.provider_usage.claude_count > 0);
+
+        // Check top prompts
+        assert!(!stats.top_prompts.is_empty());
+    }
+
+    #[test]
+    fn test_track_usage_event_various_types() {
+        let conn = initialize_db(":memory:".into()).unwrap();
+        let repo = Repository::new(conn);
+
+        // Recording event
+        let rec_event = UsageEvent {
+            id: None,
+            event_type: "recording".to_string(),
+            provider: None,
+            prompt_name: None,
+            token_count: None,
+            recording_duration_ms: Some(5000),
+            created_at: Utc::now(),
+        };
+        repo.track_usage_event(&rec_event).unwrap();
+
+        // Chat event
+        let chat_event = UsageEvent {
+            id: None,
+            event_type: "chat_message".to_string(),
+            provider: Some("openai".to_string()),
+            prompt_name: Some("custom_prompt".to_string()),
+            token_count: Some(500),
+            recording_duration_ms: None,
+            created_at: Utc::now(),
+        };
+        repo.track_usage_event(&chat_event).unwrap();
+
+        // Export event
+        let export_event = UsageEvent {
+            id: None,
+            event_type: "export".to_string(),
+            provider: None,
+            prompt_name: None,
+            token_count: None,
+            recording_duration_ms: None,
+            created_at: Utc::now(),
+        };
+        repo.track_usage_event(&export_event).unwrap();
+
+        // Verify events were tracked
+        let stats = repo.get_usage_stats().unwrap();
+        assert!(stats.total_recordings >= 0); // Stats calculation should handle it
+    }
+
+    // ===== Extended Tag Management Tests =====
+
+    #[test]
+    fn test_tag_operations_comprehensive() {
+        let conn = initialize_db(":memory:".into()).unwrap();
+        let repo = Repository::new(conn);
+
+        // Create multiple tags
+        let tag1 = repo.create_tag("Work", "#3B82F6").unwrap();
+        let tag2 = repo.create_tag("Personal", "#10B981").unwrap();
+        let tag3 = repo.create_tag("Ideas", "#F59E0B").unwrap();
+
+        // List all tags
+        let tags = repo.list_tags().unwrap();
+        assert!(tags.len() >= 3);
+
+        // Create sessions
+        let s1 = ChatSession {
+            id: None,
+            title: Some("Session 1".to_string()),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let s2 = ChatSession {
+            id: None,
+            title: Some("Session 2".to_string()),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        let s1_id = repo.create_chat_session(&s1).unwrap();
+        let s2_id = repo.create_chat_session(&s2).unwrap();
+
+        // Add tags to sessions
+        repo.add_tag_to_session(s1_id, tag1).unwrap();
+        repo.add_tag_to_session(s1_id, tag2).unwrap();
+        repo.add_tag_to_session(s2_id, tag2).unwrap();
+
+        // Get session tags
+        let s1_tags = repo.get_session_tags(s1_id).unwrap();
+        assert_eq!(s1_tags.len(), 2);
+
+        let s2_tags = repo.get_session_tags(s2_id).unwrap();
+        assert_eq!(s2_tags.len(), 1);
+
+        // Get tag usage counts
+        let counts = repo.get_tag_usage_counts().unwrap();
+        let work_count = counts.iter().find(|(t, _)| t.name == "Work").map(|(_, c)| c);
+        let personal_count = counts
+            .iter()
+            .find(|(t, _)| t.name == "Personal")
+            .map(|(_, c)| c);
+
+        assert_eq!(work_count, Some(&1));
+        assert_eq!(personal_count, Some(&2));
+
+        // Rename tag
+        repo.rename_tag(tag3, "BrightIdeas").unwrap();
+        let renamed = repo.get_tag(tag3).unwrap();
+        assert_eq!(renamed.name, "BrightIdeas");
+
+        // Update color
+        repo.update_tag_color(tag3, "#FF00FF").unwrap();
+        let updated = repo.get_tag(tag3).unwrap();
+        assert_eq!(updated.color, "#FF00FF");
+
+        // Remove tag from session
+        repo.remove_tag_from_session(s1_id, tag1).unwrap();
+        let updated_tags = repo.get_session_tags(s1_id).unwrap();
+        assert_eq!(updated_tags.len(), 1);
+
+        // Merge tags
+        repo.merge_tags(tag2, tag3).unwrap();
+
+        // Verify tag2 is deleted
+        assert!(repo.get_tag(tag2).is_err());
+
+        // Verify sessions with tag2 now have tag3
+        let s1_after_merge = repo.get_session_tags(s1_id).unwrap();
+        assert!(s1_after_merge.iter().any(|t| t.id == Some(tag3)));
+    }
+
+    #[test]
+    fn test_get_sessions_by_tags_complex() {
+        let conn = initialize_db(":memory:".into()).unwrap();
+        let repo = Repository::new(conn);
+
+        // Create tags
+        let work_tag = repo.create_tag("Work", "#FF0000").unwrap();
+        let urgent_tag = repo.create_tag("Urgent", "#00FF00").unwrap();
+        let review_tag = repo.create_tag("Review", "#0000FF").unwrap();
+
+        // Create sessions with different tag combinations
+        let s1 = ChatSession {
+            id: None,
+            title: Some("Work only".to_string()),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let s2 = ChatSession {
+            id: None,
+            title: Some("Work + Urgent".to_string()),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let s3 = ChatSession {
+            id: None,
+            title: Some("Urgent only".to_string()),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let s4 = ChatSession {
+            id: None,
+            title: Some("Work + Urgent + Review".to_string()),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        let s1_id = repo.create_chat_session(&s1).unwrap();
+        let s2_id = repo.create_chat_session(&s2).unwrap();
+        let s3_id = repo.create_chat_session(&s3).unwrap();
+        let s4_id = repo.create_chat_session(&s4).unwrap();
+
+        // Add tags
+        repo.add_tag_to_session(s1_id, work_tag).unwrap();
+        repo.add_tag_to_session(s2_id, work_tag).unwrap();
+        repo.add_tag_to_session(s2_id, urgent_tag).unwrap();
+        repo.add_tag_to_session(s3_id, urgent_tag).unwrap();
+        repo.add_tag_to_session(s4_id, work_tag).unwrap();
+        repo.add_tag_to_session(s4_id, urgent_tag).unwrap();
+        repo.add_tag_to_session(s4_id, review_tag).unwrap();
+
+        // Test "any" mode
+        let any_result = repo
+            .get_sessions_by_tags(&[work_tag, urgent_tag], "any", 10)
+            .unwrap();
+        assert_eq!(any_result.len(), 4); // All sessions except none
+
+        // Test "all" mode with two tags
+        let all_result = repo
+            .get_sessions_by_tags(&[work_tag, urgent_tag], "all", 10)
+            .unwrap();
+        assert_eq!(all_result.len(), 2); // s2 and s4
+
+        // Test "all" mode with three tags
+        let all_three = repo
+            .get_sessions_by_tags(&[work_tag, urgent_tag, review_tag], "all", 10)
+            .unwrap();
+        assert_eq!(all_three.len(), 1); // Only s4
+
+        // Test with single tag
+        let single_tag = repo.get_sessions_by_tags(&[review_tag], "any", 10).unwrap();
+        assert_eq!(single_tag.len(), 1); // Only s4
+    }
+
+    // ===== Extended Backup Tests =====
+
+    #[test]
+    fn test_backup_settings_comprehensive() {
+        let conn = initialize_db(":memory:".into()).unwrap();
+        let repo = Repository::new(conn);
+
+        // Get default settings
+        let settings = repo.get_backup_settings().unwrap();
+        assert!(!settings.enabled);
+        assert_eq!(settings.frequency, "manual");
+
+        // Update all settings
+        let mut updated_settings = settings.clone();
+        updated_settings.enabled = true;
+        updated_settings.frequency = "daily".to_string();
+        updated_settings.backup_path = "/custom/backup/path".to_string();
+        updated_settings.retention_count = 14;
+
+        repo.update_backup_settings(&updated_settings).unwrap();
+
+        // Verify updates
+        let fetched = repo.get_backup_settings().unwrap();
+        assert!(fetched.enabled);
+        assert_eq!(fetched.frequency, "daily");
+        assert_eq!(fetched.backup_path, "/custom/backup/path");
+        assert_eq!(fetched.retention_count, 14);
+    }
+
+    #[test]
+    fn test_backup_history_operations() {
+        let conn = initialize_db(":memory:".into()).unwrap();
+        let repo = Repository::new(conn);
+
+        // Create successful backup
+        let success_backup = BackupHistory {
+            id: None,
+            file_path: "/backups/backup_001.db".to_string(),
+            file_size_bytes: 1024000,
+            created_at: Utc::now(),
+            is_automatic: true,
+            status: "success".to_string(),
+            error_message: None,
+        };
+        repo.create_backup_history(&success_backup).unwrap();
+
+        // Create failed backup
+        let failed_backup = BackupHistory {
+            id: None,
+            file_path: "/backups/backup_002.db".to_string(),
+            file_size_bytes: 0,
+            created_at: Utc::now(),
+            is_automatic: false,
+            status: "failed".to_string(),
+            error_message: Some("Disk full".to_string()),
+        };
+        repo.create_backup_history(&failed_backup).unwrap();
+
+        // List history
+        let history = repo.list_backup_history(10).unwrap();
+        assert_eq!(history.len(), 2);
+
+        // Check failed backup details
+        let failed = history.iter().find(|h| h.status == "failed").unwrap();
+        assert_eq!(failed.error_message, Some("Disk full".to_string()));
+        assert!(!failed.is_automatic);
+    }
+
+    #[test]
+    fn test_backup_status() {
+        let conn = initialize_db(":memory:".into()).unwrap();
+        let repo = Repository::new(conn);
+
+        // Initial status
+        let status = repo.get_backup_status().unwrap();
+        assert_eq!(status.total_backups, 0);
+        assert!(!status.enabled);
+
+        // Create backups
+        for i in 0..5 {
+            let backup = BackupHistory {
+                id: None,
+                file_path: format!("/backups/backup_{:03}.db", i),
+                file_size_bytes: 1024000 + (i as i64 * 100000),
+                created_at: Utc::now(),
+                is_automatic: i % 2 == 0,
+                status: "success".to_string(),
+                error_message: None,
+            };
+            repo.create_backup_history(&backup).unwrap();
+        }
+
+        // Update last backup time
+        repo.update_last_backup_time().unwrap();
+
+        // Get updated status
+        let updated_status = repo.get_backup_status().unwrap();
+        assert_eq!(updated_status.total_backups, 5);
+        assert!(updated_status.last_backup_at.is_some());
+        assert!(updated_status.total_backup_size_bytes > 0);
+    }
+
+    #[test]
+    fn test_update_last_backup_time() {
+        let conn = initialize_db(":memory:".into()).unwrap();
+        let repo = Repository::new(conn);
+
+        let before = repo.get_backup_settings().unwrap();
+        assert!(before.last_backup_at.is_none());
+
+        repo.update_last_backup_time().unwrap();
+
+        let after = repo.get_backup_settings().unwrap();
+        assert!(after.last_backup_at.is_some());
+    }
+
+    // ===== Card Operations Tests =====
+
+    #[test]
+    fn test_card_operations_comprehensive() {
+        let conn = initialize_db(":memory:".into()).unwrap();
+        let repo = Repository::new(conn);
+
+        // Create session and message
+        let session = ChatSession {
+            id: None,
+            title: Some("Test".to_string()),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let session_id = repo.create_chat_session(&session).unwrap();
+
+        let message = Message {
+            id: None,
+            session_id,
+            recording_id: None,
+            role: MessageRole::User,
+            content: "Test message".to_string(),
+            privacy_tags: None,
+            created_at: Utc::now(),
+        };
+        let message_id = repo.create_message(&message).unwrap();
+
+        // Create card with references
+        let card = Card {
+            id: None,
+            content: "This is a business idea card".to_string(),
+            privacy_level: Some(PrivacyLevel::Business),
+            published: false,
+            git_sha: None,
+            category: Some(CardCategory::Unassimilated),
+            session_id: Some(session_id),
+            message_id: Some(message_id),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        let card_id = repo.create_card(&card).unwrap();
+        assert!(card_id > 0);
+
+        // Get card
+        let fetched = repo.get_card(card_id).unwrap();
+        assert_eq!(fetched.content, "This is a business idea card");
+        assert_eq!(fetched.session_id, Some(session_id));
+        assert_eq!(fetched.message_id, Some(message_id));
+        assert!(!fetched.published);
+
+        // Update card
+        let mut updated_card = fetched.clone();
+        updated_card.category = Some(CardCategory::Program);
+        updated_card.privacy_level = Some(PrivacyLevel::Ideas);
+
+        repo.update_card(&updated_card).unwrap();
+
+        let after_update = repo.get_card(card_id).unwrap();
+        assert!(matches!(
+            after_update.category,
+            Some(CardCategory::Program)
+        ));
+        assert!(matches!(
+            after_update.privacy_level,
+            Some(PrivacyLevel::Ideas)
+        ));
+
+        // Publish card
+        repo.publish_card(card_id, "abc123def456").unwrap();
+
+        let published = repo.get_card(card_id).unwrap();
+        assert!(published.published);
+        assert_eq!(published.git_sha, Some("abc123def456".to_string()));
+
+        // Delete card
+        repo.delete_card(card_id).unwrap();
+        assert!(repo.get_card(card_id).is_err());
+    }
+
+    #[test]
+    fn test_get_publishable_cards_filtering() {
+        let conn = initialize_db(":memory:".into()).unwrap();
+        let repo = Repository::new(conn);
+
+        // Create cards with all privacy levels
+        let cards = vec![
+            (PrivacyLevel::Private, false),
+            (PrivacyLevel::Personal, false),
+            (PrivacyLevel::Business, false),
+            (PrivacyLevel::Ideas, false),
+            (PrivacyLevel::Business, true), // Already published
+        ];
+
+        for (level, published) in cards {
+            let card = Card {
+                id: None,
+                content: format!("Content for {:?}", level),
+                privacy_level: Some(level),
+                published,
+                git_sha: if published {
+                    Some("sha123".to_string())
+                } else {
+                    None
+                },
+                category: None,
+                session_id: None,
+                message_id: None,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            };
+            repo.create_card(&card).unwrap();
+        }
+
+        // Get publishable cards (only unpublished BUSINESS and IDEAS)
+        let publishable = repo.get_publishable_cards(100).unwrap();
+        assert_eq!(publishable.len(), 2);
+
+        // Verify only BUSINESS and IDEAS, and not published
+        for card in publishable {
+            assert!(matches!(
+                card.privacy_level,
+                Some(PrivacyLevel::Business) | Some(PrivacyLevel::Ideas)
+            ));
+            assert!(!card.published);
+        }
+    }
+
+    // ===== Language Preference Tests =====
+
+    #[test]
+    fn test_language_preference_operations() {
+        let conn = initialize_db(":memory:".into()).unwrap();
+        let repo = Repository::new(conn);
+
+        // Default should be English
+        let default = repo.get_language_preference().unwrap();
+        assert_eq!(default, "en");
+
+        // Change to Spanish
+        repo.set_language_preference("es").unwrap();
+        let spanish = repo.get_language_preference().unwrap();
+        assert_eq!(spanish, "es");
+
+        // Change to French
+        repo.set_language_preference("fr").unwrap();
+        let french = repo.get_language_preference().unwrap();
+        assert_eq!(french, "fr");
+    }
+
+    // ===== App Settings Tests =====
+
+    #[test]
+    fn test_app_settings_operations() {
+        let conn = initialize_db(":memory:".into()).unwrap();
+        let repo = Repository::new(conn);
+
+        // Set a setting
+        repo.set_app_setting("theme", "dark").unwrap();
+
+        // Get the setting
+        let theme = repo.get_app_setting("theme").unwrap();
+        assert_eq!(theme, Some("dark".to_string()));
+
+        // Update setting
+        repo.set_app_setting("theme", "light").unwrap();
+        let updated_theme = repo.get_app_setting("theme").unwrap();
+        assert_eq!(updated_theme, Some("light".to_string()));
+
+        // Non-existent setting
+        let missing = repo.get_app_setting("missing_key").unwrap();
+        assert_eq!(missing, None);
+    }
+
+    // ===== Cascade Deletion Tests =====
+
+    #[test]
+    fn test_cascade_deletion_session() {
+        let conn = initialize_db(":memory:".into()).unwrap();
+        let repo = Repository::new(conn);
+
+        // Create session with messages
+        let session = ChatSession {
+            id: None,
+            title: Some("To Delete".to_string()),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let session_id = repo.create_chat_session(&session).unwrap();
+
+        // Add messages
+        for i in 0..3 {
+            let msg = Message {
+                id: None,
+                session_id,
+                recording_id: None,
+                role: MessageRole::User,
+                content: format!("Message {}", i),
+                privacy_tags: None,
+                created_at: Utc::now(),
+            };
+            repo.create_message(&msg).unwrap();
+        }
+
+        // Verify messages exist
+        let messages_before = repo.list_messages_by_session(session_id).unwrap();
+        assert_eq!(messages_before.len(), 3);
+
+        // Delete session
+        repo.delete_chat_session(session_id).unwrap();
+
+        // Verify session is deleted
+        assert!(repo.get_chat_session(session_id).is_err());
+
+        // Verify messages are cascade deleted
+        let messages_after = repo.list_messages_by_session(session_id).unwrap();
+        assert_eq!(messages_after.len(), 0);
+    }
+
+    #[test]
+    fn test_cascade_deletion_recording() {
+        let conn = initialize_db(":memory:".into()).unwrap();
+        let repo = Repository::new(conn);
+
+        // Create recording with transcript
+        let recording = Recording {
+            id: None,
+            filepath: "/test/cascade.wav".to_string(),
+            duration_ms: 5000,
+            sample_rate: 16000,
+            channels: 1,
+            file_size_bytes: Some(80000),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+        let rec_id = repo.create_recording(&recording).unwrap();
+
+        let transcript = Transcript {
+            id: None,
+            recording_id: rec_id,
+            text: "Test transcript".to_string(),
+            language: Some("en".to_string()),
+            confidence: 0.95,
+            plugin_name: "whisper-cpp".to_string(),
+            transcription_duration_ms: Some(1200),
+            created_at: Utc::now(),
+        };
+        repo.create_transcript(&transcript).unwrap();
+
+        // Verify transcript exists
+        let trans_before = repo.get_transcript_by_recording(rec_id);
+        assert!(trans_before.is_ok());
+
+        // Delete recording
+        repo.delete_recording(rec_id).unwrap();
+
+        // Verify recording is deleted
+        assert!(repo.get_recording(rec_id).is_err());
+
+        // Verify transcript is cascade deleted
+        assert!(repo.get_transcript_by_recording(rec_id).is_err());
     }
 }

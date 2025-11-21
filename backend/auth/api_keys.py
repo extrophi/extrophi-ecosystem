@@ -428,7 +428,7 @@ class APIKeyAuth:
 # ============================================================================
 
 
-def require_api_key(
+async def require_api_key(
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_session),
 ) -> str:
@@ -485,7 +485,7 @@ def require_api_key(
     return user_id
 
 
-def optional_api_key(
+async def optional_api_key(
     authorization: Optional[str] = Header(None),
     db: Session = Depends(get_session),
 ) -> Optional[str]:

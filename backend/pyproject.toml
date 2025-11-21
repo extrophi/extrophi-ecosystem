@@ -32,7 +32,15 @@ dependencies = [
     "playwright>=1.40.0",
     "praw>=7.7.0",
     "youtube-transcript-api>=0.6.0",
+    "yt-dlp>=2023.11.16",
     "httpx>=0.25.0",
+
+    # Security (OWASP Top 10)
+    "cryptography>=41.0.0",  # A02: Encryption
+    "passlib[bcrypt]>=1.7.4",  # A07: Password hashing
+    "python-jose[cryptography]>=3.3.0",  # A07: JWT tokens
+    "safety>=3.0.0",  # A06: Vulnerability scanning
+    "pip-audit>=2.6.0",  # A06: Alternative vulnerability scanner
 
     # Utilities
     "python-dotenv>=1.0.0",
@@ -54,6 +62,11 @@ dev = [
 [build-system]
 requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["api*", "db*", "auth*", "scrapers*", "queue*", "vector*", "analysis*", "tokens*", "services*"]
+exclude = ["tests*", "docs*"]
 
 [tool.black]
 line-length = 100
