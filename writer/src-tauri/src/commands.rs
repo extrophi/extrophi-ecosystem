@@ -735,9 +735,133 @@ pub async fn export_session(
     }
 
     // Export to markdown
-    let file_path = braindump::export::export_session_to_markdown(&session, &messages)?;
+    let file_path = braindump::export::markdown::export_session_to_markdown(&session, &messages)?;
 
     Ok(file_path.to_string_lossy().to_string())
+}
+
+/// Export chat session to PDF
+#[tauri::command]
+pub async fn export_session_pdf(
+    session_id: i64,
+    output_path: String,
+    state: State<'_, AppState>,
+) -> Result<(), BrainDumpError> {
+    use braindump::export::{pdf::PDFExporter, Exporter, ExportOptions, ExportFormat};
+
+    let db = state.db.lock();
+    let session = db.get_chat_session(session_id)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+    let messages = db.list_messages_by_session(session_id)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+    drop(db);
+
+    let exporter = PDFExporter::new();
+    let options = ExportOptions {
+        format: ExportFormat::PDF,
+        ..Default::default()
+    };
+
+    exporter.export(&session, &messages, std::path::PathBuf::from(output_path), &options)
+        .map_err(|e| BrainDumpError::Other(e))
+}
+
+/// Export chat session to DOCX
+#[tauri::command]
+pub async fn export_session_docx(
+    session_id: i64,
+    output_path: String,
+    state: State<'_, AppState>,
+) -> Result<(), BrainDumpError> {
+    use braindump::export::{docx::DocxExporter, Exporter, ExportOptions, ExportFormat};
+
+    let db = state.db.lock();
+    let session = db.get_chat_session(session_id)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+    let messages = db.list_messages_by_session(session_id)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+    drop(db);
+
+    let exporter = DocxExporter::new();
+    let options = ExportOptions {
+        format: ExportFormat::DOCX,
+        ..Default::default()
+    };
+
+    exporter.export(&session, &messages, std::path::PathBuf::from(output_path), &options)
+        .map_err(|e| BrainDumpError::Other(e))
+}
+
+/// Export chat session to HTML
+#[tauri::command]
+pub async fn export_session_html(
+    session_id: i64,
+    output_path: String,
+    template: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), BrainDumpError> {
+    use braindump::export::{html::HTMLExporter, Exporter, ExportOptions, ExportFormat};
+
+    let db = state.db.lock();
+    let session = db.get_chat_session(session_id)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+    let messages = db.list_messages_by_session(session_id)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+    drop(db);
+
+    let exporter = HTMLExporter::new();
+    let options = ExportOptions {
+        format: ExportFormat::HTML,
+        template,
+        ..Default::default()
+    };
+
+    exporter.export(&session, &messages, std::path::PathBuf::from(output_path), &options)
+        .map_err(|e| BrainDumpError::Other(e))
+}
+
+/// Export multiple sessions to a ZIP file
+#[tauri::command]
+pub async fn export_batch(
+    session_ids: Vec<i64>,
+    output_zip: String,
+    format: String,
+    state: State<'_, AppState>,
+) -> Result<(), BrainDumpError> {
+    use braindump::export::{batch::BatchExporter, ExportFormat, ExportOptions};
+
+    // Parse format
+    let export_format = match format.to_lowercase().as_str() {
+        "pdf" => ExportFormat::PDF,
+        "docx" => ExportFormat::DOCX,
+        "html" => ExportFormat::HTML,
+        "markdown" => ExportFormat::Markdown,
+        _ => return Err(BrainDumpError::Other(format!("Invalid export format: {}", format))),
+    };
+
+    // Collect sessions and their messages
+    let db = state.db.lock();
+    let mut sessions_with_messages = Vec::new();
+
+    for session_id in session_ids {
+        let session = db.get_chat_session(session_id)
+            .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+        let messages = db.list_messages_by_session(session_id)
+            .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+
+        sessions_with_messages.push((session, messages));
+    }
+    drop(db);
+
+    // Create batch exporter
+    let exporter = BatchExporter::new();
+    let options = ExportOptions {
+        format: export_format,
+        ..Default::default()
+    };
+
+    exporter.export_multiple(sessions_with_messages, std::path::PathBuf::from(output_zip), &options)
+        .map_err(|e| BrainDumpError::Other(e))
 }
 
 // ============================================================================

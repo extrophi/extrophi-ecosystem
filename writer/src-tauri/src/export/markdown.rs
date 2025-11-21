@@ -1,10 +1,39 @@
 use crate::db::models::{ChatSession, Message};
 use crate::error::BrainDumpError;
+use super::{Exporter, ExportOptions, sanitize_filename};
 use chrono::Local;
 use std::fs;
 use std::path::PathBuf;
 
-/// Export a chat session to markdown
+pub struct MarkdownExporter;
+
+impl MarkdownExporter {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl Exporter for MarkdownExporter {
+    fn export(
+        &self,
+        session: &ChatSession,
+        messages: &[Message],
+        output_path: PathBuf,
+        _options: &ExportOptions,
+    ) -> Result<(), String> {
+        let markdown = generate_markdown(session, messages);
+
+        // Create directory if it doesn't exist
+        if let Some(parent) = output_path.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+
+        fs::write(&output_path, markdown).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+}
+
+/// Export a chat session to markdown (legacy function for backward compatibility)
 pub fn export_session_to_markdown(
     session: &ChatSession,
     messages: &[Message],
@@ -91,19 +120,6 @@ fn get_export_path(session: &ChatSession) -> Result<PathBuf, BrainDumpError> {
     Ok(export_dir.join(filename))
 }
 
-fn sanitize_filename(title: &str) -> String {
-    title
-        .chars()
-        .map(|c| match c {
-            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' => c,
-            ' ' => '_',
-            _ => '-',
-        })
-        .collect::<String>()
-        .chars()
-        .take(50) // Limit length
-        .collect()
-}
 
 #[cfg(test)]
 mod tests {

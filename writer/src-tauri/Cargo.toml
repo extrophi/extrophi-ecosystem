@@ -32,6 +32,12 @@ futures-util = "0.3"
 keyring = "2.3"
 dotenv = "0.15"
 git2 = "0.19"
+# Export dependencies
+printpdf = "0.7"
+docx-rs = "0.4"
+handlebars = "5.0"
+zip = "0.6"
+uuid = { version = "1.0", features = ["v4"] }
 
 [build-dependencies]
 tauri-build = { version = "2.5", features = [] }

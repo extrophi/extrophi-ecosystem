@@ -464,6 +464,10 @@ fn main() {
             commands::open_openai_auth_browser,
             // Export Commands
             commands::export_session,
+            commands::export_session_pdf,
+            commands::export_session_docx,
+            commands::export_session_html,
+            commands::export_batch,
             // File-based Prompt Template Commands
             commands::load_prompt,
             commands::list_prompts,
