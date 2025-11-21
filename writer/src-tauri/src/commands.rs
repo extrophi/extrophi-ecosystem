@@ -377,6 +377,44 @@ pub async fn get_peak_level(state: State<'_, AppState>) -> Result<f32, BrainDump
 }
 
 #[tauri::command]
+pub async fn pause_recording(state: State<'_, AppState>) -> Result<String, BrainDumpError> {
+    let (response_tx, response_rx) = mpsc::channel();
+
+    state
+        .audio_tx
+        .send((AudioCommand::PauseRecording, response_tx))
+        .map_err(|e| BrainDumpError::Audio(AudioError::DeviceInitFailed(e.to_string())))?;
+
+    match response_rx
+        .recv()
+        .map_err(|e| BrainDumpError::Audio(AudioError::DeviceInitFailed(e.to_string())))?
+    {
+        AudioResponse::RecordingPaused => Ok("Recording paused".to_string()),
+        AudioResponse::Error(e) => Err(BrainDumpError::Audio(AudioError::RecordingFailed(e))),
+        _ => Err(BrainDumpError::Other("Unexpected response".to_string())),
+    }
+}
+
+#[tauri::command]
+pub async fn resume_recording(state: State<'_, AppState>) -> Result<String, BrainDumpError> {
+    let (response_tx, response_rx) = mpsc::channel();
+
+    state
+        .audio_tx
+        .send((AudioCommand::ResumeRecording, response_tx))
+        .map_err(|e| BrainDumpError::Audio(AudioError::DeviceInitFailed(e.to_string())))?;
+
+    match response_rx
+        .recv()
+        .map_err(|e| BrainDumpError::Audio(AudioError::DeviceInitFailed(e.to_string())))?
+    {
+        AudioResponse::RecordingResumed => Ok("Recording resumed".to_string()),
+        AudioResponse::Error(e) => Err(BrainDumpError::Audio(AudioError::RecordingFailed(e))),
+        _ => Err(BrainDumpError::Other("Unexpected response".to_string())),
+    }
+}
+
+#[tauri::command]
 pub async fn is_model_loaded(state: State<'_, AppState>) -> Result<bool, BrainDumpError> {
     let manager = state.plugin_manager.lock();
 

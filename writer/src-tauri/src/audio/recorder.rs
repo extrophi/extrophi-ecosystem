@@ -24,6 +24,7 @@ pub type RecorderResult<T> = Result<T, RecorderError>;
 /// Recorder state shared across threads
 struct RecorderState {
     is_recording: bool,
+    is_paused: bool,
     samples: Vec<f32>,
     peak_level: f32, // For real-time visualization
 }
@@ -68,6 +69,7 @@ impl Recorder {
 
         let state = Arc::new(Mutex::new(RecorderState {
             is_recording: false,
+            is_paused: false,
             samples: Vec::new(),
             peak_level: 0.0,
         }));
@@ -97,6 +99,7 @@ impl Recorder {
             };
             state.samples.clear();
             state.is_recording = true;
+            state.is_paused = false;
             state.peak_level = 0.0;
         }
 
@@ -116,7 +119,7 @@ impl Recorder {
                         }
                     };
 
-                    if state.is_recording {
+                    if state.is_recording && !state.is_paused {
                         // Append samples
                         state.samples.extend_from_slice(data);
 
@@ -158,8 +161,45 @@ impl Recorder {
             }
         };
         state.is_recording = false;
+        state.is_paused = false;
 
         Ok(std::mem::take(&mut state.samples))
+    }
+
+    /// Pause recording (keeps stream active but stops capturing samples)
+    pub fn pause(&mut self) -> RecorderResult<()> {
+        if !self.is_recording() {
+            return Err(RecorderError::NotStarted);
+        }
+
+        let mut state = match self.state.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                eprintln!("Recorder mutex poisoned during pause, recovering");
+                poisoned.into_inner()
+            }
+        };
+
+        state.is_paused = true;
+        Ok(())
+    }
+
+    /// Resume recording after pause
+    pub fn resume(&mut self) -> RecorderResult<()> {
+        if !self.is_recording() {
+            return Err(RecorderError::NotStarted);
+        }
+
+        let mut state = match self.state.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                eprintln!("Recorder mutex poisoned during resume, recovering");
+                poisoned.into_inner()
+            }
+        };
+
+        state.is_paused = false;
+        Ok(())
     }
 
     /// Check if currently recording

@@ -35,6 +35,8 @@ pub use services::{ClaudeClient, OpenAiClient};
 pub enum AudioCommand {
     StartRecording,
     StopRecording,
+    PauseRecording,
+    ResumeRecording,
     GetPeakLevel,
     Shutdown,
 }
@@ -43,6 +45,8 @@ pub enum AudioCommand {
 pub enum AudioResponse {
     RecordingStarted,
     RecordingStopped { samples: Vec<f32>, sample_rate: u32 },
+    RecordingPaused,
+    RecordingResumed,
     PeakLevel(f32),
     Error(String),
 }
