@@ -1,0 +1,11 @@
+[build]
+# Ensure tests are always rebuilt for coverage
+incremental = false
+
+[target.'cfg(all())']
+# Enable instrumentation for code coverage
+rustflags = ["-C", "instrument-coverage"]
+
+[env]
+# Required for code coverage with llvm-cov
+LLVM_PROFILE_FILE = "target/coverage/braindump-%p-%m.profraw"
