@@ -255,6 +255,50 @@ fn main() {
                         let _ = response_tx.send(AudioResponse::PeakLevel(0.0));
                     }
                 }
+                AudioCommand::PauseRecording => {
+                    braindump::logging::info("Audio", "PauseRecording command received");
+
+                    if let Some(rec) = &mut recorder {
+                        match rec.pause() {
+                            Ok(()) => {
+                                braindump::logging::info("Audio", "Recording paused successfully");
+                                let _ = response_tx.send(AudioResponse::RecordingPaused);
+                            }
+                            Err(e) => {
+                                braindump::logging::error(
+                                    "Audio",
+                                    &format!("Failed to pause recording: {}", e),
+                                );
+                                let _ = response_tx.send(AudioResponse::Error(e.to_string()));
+                            }
+                        }
+                    } else {
+                        braindump::logging::warn("Audio", "No active recording to pause");
+                        let _ = response_tx.send(AudioResponse::Error("Not recording".to_string()));
+                    }
+                }
+                AudioCommand::ResumeRecording => {
+                    braindump::logging::info("Audio", "ResumeRecording command received");
+
+                    if let Some(rec) = &mut recorder {
+                        match rec.resume() {
+                            Ok(()) => {
+                                braindump::logging::info("Audio", "Recording resumed successfully");
+                                let _ = response_tx.send(AudioResponse::RecordingResumed);
+                            }
+                            Err(e) => {
+                                braindump::logging::error(
+                                    "Audio",
+                                    &format!("Failed to resume recording: {}", e),
+                                );
+                                let _ = response_tx.send(AudioResponse::Error(e.to_string()));
+                            }
+                        }
+                    } else {
+                        braindump::logging::warn("Audio", "No active recording to resume");
+                        let _ = response_tx.send(AudioResponse::Error("Not recording".to_string()));
+                    }
+                }
                 AudioCommand::Shutdown => {
                     braindump::logging::info("Audio", "Audio thread shutting down");
                     break;
@@ -391,6 +435,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::start_recording,
             commands::stop_recording,
+            commands::pause_recording,
+            commands::resume_recording,
             commands::get_transcripts,
             commands::get_peak_level,
             commands::is_model_loaded,

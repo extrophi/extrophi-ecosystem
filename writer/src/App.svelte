@@ -6,6 +6,9 @@
   import TemplateSelector from './components/TemplateSelector.svelte';
   import SettingsPanel from './components/SettingsPanel.svelte';
   import ChatPanel from './components/ChatPanel.svelte';
+  import WaveformVisualizer from './components/WaveformVisualizer.svelte';
+  import RecordingControls from './components/RecordingControls.svelte';
+  import AudioLevelMeter from './components/AudioLevelMeter.svelte';
   import ChatView from './lib/components/ChatView.svelte';
   import PromptManager from './lib/components/PromptManager.svelte';
   import StatsDashboard from './lib/components/StatsDashboard.svelte';
@@ -762,6 +765,14 @@
           {/if}
         </div>
       </div>
+
+      <!-- Enhanced Recording UI -->
+      {#if modelStatus === 'ready'}
+        <div class="recording-enhanced-ui">
+          <AudioLevelMeter audioLevel={peakLevel} />
+          <WaveformVisualizer {isRecording} peakLevel={peakLevel} />
+        </div>
+      {/if}
 
       <!-- Template Selector -->
       <TemplateSelector bind:selectedTemplate={selectedTemplate} />
@@ -1779,5 +1790,26 @@
 
   .terminal-overlay > :global(*) {
     pointer-events: auto;
+  }
+
+  /* ==================== Enhanced Recording UI ==================== */
+  .recording-enhanced-ui {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1rem 30px;
+    background: #fafafa;
+    border-bottom: 1px solid #e0e0e0;
+  }
+
+  @media (min-width: 768px) {
+    .recording-enhanced-ui {
+      flex-direction: row;
+      align-items: stretch;
+    }
+
+    .recording-enhanced-ui > :global(*) {
+      flex: 1;
+    }
   }
 </style>
