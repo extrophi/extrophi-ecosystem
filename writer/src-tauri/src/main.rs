@@ -467,6 +467,10 @@ fn main() {
             commands::git_get_publish_status,
             commands::git_publish_cards,
             commands::git_get_publishable_count,
+            // Research API Integration Commands
+            commands::enrich_content,
+            commands::check_enrichment_status,
+            commands::test_research_connection,
             // Model Manager Commands
             services::model_manager::get_available_models,
             services::model_manager::get_installed_models,

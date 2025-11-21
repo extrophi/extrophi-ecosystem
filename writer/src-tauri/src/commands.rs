@@ -1484,3 +1484,97 @@ pub async fn git_get_publishable_count(state: State<'_, AppState>) -> Result<usi
 
     Ok(cards.len())
 }
+
+// ============================================================================
+// Research API Integration Commands (Writer-Research Integration)
+// ============================================================================
+
+use braindump::services::research_client::{EnrichmentRequest, ResearchClient};
+
+/// Enrich content via Research API
+#[tauri::command]
+pub async fn enrich_content(
+    content: String,
+    enrichment_type: String,
+) -> Result<String, BrainDumpError> {
+    braindump::logging::info(
+        "Research",
+        &format!("Enriching content (type: {})", enrichment_type),
+    );
+
+    // Validate enrichment type
+    if !["expand", "summarize", "analyze"].contains(&enrichment_type.as_str()) {
+        return Err(BrainDumpError::Other(
+            "Invalid enrichment type. Must be 'expand', 'summarize', or 'analyze'".to_string(),
+        ));
+    }
+
+    // Get Research API URL from environment or default
+    let api_url = ResearchClient::get_base_url();
+    let client = ResearchClient::new(api_url);
+
+    // Create enrichment request
+    let request = EnrichmentRequest {
+        content,
+        enrichment_type,
+    };
+
+    // Enrich with retry logic (3 retries with exponential backoff)
+    match client.enrich_content_with_retry(request, 3).await {
+        Ok(response) => {
+            braindump::logging::info(
+                "Research",
+                &format!("Enrichment successful (job: {})", response.job_id),
+            );
+            Ok(response.enriched_content)
+        }
+        Err(e) => {
+            braindump::logging::error("Research", &format!("Enrichment failed: {}", e));
+            Err(e)
+        }
+    }
+}
+
+/// Check enrichment job status
+#[tauri::command]
+pub async fn check_enrichment_status(job_id: String) -> Result<String, BrainDumpError> {
+    braindump::logging::info("Research", &format!("Checking job status: {}", job_id));
+
+    let api_url = ResearchClient::get_base_url();
+    let client = ResearchClient::new(api_url);
+
+    match client.check_status(&job_id).await {
+        Ok(status) => {
+            braindump::logging::info("Research", &format!("Job status: {}", status));
+            Ok(status)
+        }
+        Err(e) => {
+            braindump::logging::error("Research", &format!("Status check failed: {}", e));
+            Err(e)
+        }
+    }
+}
+
+/// Test connection to Research API
+#[tauri::command]
+pub async fn test_research_connection() -> Result<bool, BrainDumpError> {
+    braindump::logging::info("Research", "Testing Research API connection");
+
+    let api_url = ResearchClient::get_base_url();
+    let client = ResearchClient::new(api_url);
+
+    match client.test_connection().await {
+        Ok(connected) => {
+            if connected {
+                braindump::logging::info("Research", "Connection successful");
+            } else {
+                braindump::logging::warn("Research", "Connection failed");
+            }
+            Ok(connected)
+        }
+        Err(e) => {
+            braindump::logging::error("Research", &format!("Connection test error: {}", e));
+            Err(e)
+        }
+    }
+}
