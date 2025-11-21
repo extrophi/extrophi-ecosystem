@@ -198,6 +198,25 @@ pub struct BackupStatus {
     pub is_overdue: bool,
 }
 
+// ===== Search (OMICRON-2 Issue #75) =====
+
+#[derive(Debug, Clone)]
+pub struct SearchFilters {
+    pub tags: Option<Vec<i64>>,
+    pub start_date: Option<String>,
+    pub end_date: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchResult {
+    pub result_type: String, // "session", "transcript", "message"
+    pub session_id: i64,
+    pub session_title: Option<String>,
+    pub content: String,
+    pub created_at: String,
+    pub highlight: Option<String>, // Snippet with search term highlighted
+}
+
 // ===== Cards (V8: Privacy & Publishing) =====
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

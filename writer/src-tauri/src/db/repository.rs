@@ -420,6 +420,213 @@ impl Repository {
         recordings.collect()
     }
 
+    /// Search across sessions, transcripts, and messages (OMICRON-2 #75)
+    pub fn search_all(
+        &self,
+        query: &str,
+        filters: SearchFilters,
+    ) -> SqliteResult<Vec<SearchResult>> {
+        use super::models::SearchResult;
+
+        let mut results = Vec::new();
+        let search_pattern = format!("%{}%", query);
+
+        // Build base WHERE clause for date filtering
+        let mut date_filter = String::new();
+        if filters.start_date.is_some() {
+            date_filter.push_str(" AND created_at >= ?");
+        }
+        if filters.end_date.is_some() {
+            date_filter.push_str(" AND created_at <= ?");
+        }
+
+        // Build tag filter
+        let tag_filter = if let Some(ref tag_ids) = filters.tags {
+            if !tag_ids.is_empty() {
+                format!(
+                    " AND session_id IN (
+                        SELECT session_id FROM session_tags WHERE tag_id IN ({})
+                    )",
+                    tag_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",")
+                )
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+
+        // Search in session titles
+        let session_query = format!(
+            "SELECT cs.id, cs.title, cs.title as content, cs.created_at
+             FROM chat_sessions cs
+             WHERE cs.title LIKE ?1{}{}
+             ORDER BY cs.created_at DESC
+             LIMIT 50",
+            date_filter, tag_filter
+        );
+
+        let mut stmt = self.conn.prepare(&session_query)?;
+        let mut param_idx = 2;
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(search_pattern.clone())];
+
+        if let Some(ref start) = filters.start_date {
+            params_vec.push(Box::new(start.clone()));
+            param_idx += 1;
+        }
+        if let Some(ref end) = filters.end_date {
+            params_vec.push(Box::new(end.clone()));
+            param_idx += 1;
+        }
+        if let Some(ref tag_ids) = filters.tags {
+            for tag_id in tag_ids {
+                params_vec.push(Box::new(*tag_id));
+            }
+        }
+
+        let params_refs: Vec<&dyn rusqlite::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
+
+        let session_results = stmt
+            .query_map(&*params_refs, |row| {
+                Ok(SearchResult {
+                    result_type: "session".to_string(),
+                    session_id: row.get(0)?,
+                    session_title: row.get(1)?,
+                    content: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                    created_at: row.get(3)?,
+                    highlight: None,
+                })
+            })?
+            .collect::<SqliteResult<Vec<_>>>()?;
+
+        results.extend(session_results);
+
+        // Search in messages
+        let message_query = format!(
+            "SELECT m.session_id, cs.title, m.content, m.created_at
+             FROM messages m
+             JOIN chat_sessions cs ON m.session_id = cs.id
+             WHERE m.content LIKE ?1{}{}
+             ORDER BY m.created_at DESC
+             LIMIT 50",
+            date_filter, tag_filter
+        );
+
+        let mut stmt = self.conn.prepare(&message_query)?;
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(search_pattern.clone())];
+
+        if let Some(ref start) = filters.start_date {
+            params_vec.push(Box::new(start.clone()));
+        }
+        if let Some(ref end) = filters.end_date {
+            params_vec.push(Box::new(end.clone()));
+        }
+        if let Some(ref tag_ids) = filters.tags {
+            for tag_id in tag_ids {
+                params_vec.push(Box::new(*tag_id));
+            }
+        }
+
+        let params_refs: Vec<&dyn rusqlite::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
+
+        let message_results = stmt
+            .query_map(&*params_refs, |row| {
+                let content: String = row.get(2)?;
+                let highlight = Self::create_highlight(&content, query);
+
+                Ok(SearchResult {
+                    result_type: "message".to_string(),
+                    session_id: row.get(0)?,
+                    session_title: row.get(1)?,
+                    content: content.clone(),
+                    created_at: row.get(3)?,
+                    highlight: Some(highlight),
+                })
+            })?
+            .collect::<SqliteResult<Vec<_>>>()?;
+
+        results.extend(message_results);
+
+        // Search in transcripts
+        let transcript_query = format!(
+            "SELECT m.session_id, cs.title, t.text, t.created_at
+             FROM transcripts t
+             JOIN recordings r ON t.recording_id = r.id
+             JOIN messages m ON m.recording_id = r.id
+             JOIN chat_sessions cs ON m.session_id = cs.id
+             WHERE t.text LIKE ?1{}{}
+             ORDER BY t.created_at DESC
+             LIMIT 50",
+            date_filter, tag_filter
+        );
+
+        let mut stmt = self.conn.prepare(&transcript_query)?;
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(search_pattern.clone())];
+
+        if let Some(ref start) = filters.start_date {
+            params_vec.push(Box::new(start.clone()));
+        }
+        if let Some(ref end) = filters.end_date {
+            params_vec.push(Box::new(end.clone()));
+        }
+        if let Some(ref tag_ids) = filters.tags {
+            for tag_id in tag_ids {
+                params_vec.push(Box::new(*tag_id));
+            }
+        }
+
+        let params_refs: Vec<&dyn rusqlite::ToSql> =
+            params_vec.iter().map(|p| p.as_ref()).collect();
+
+        let transcript_results = stmt
+            .query_map(&*params_refs, |row| {
+                let content: String = row.get(2)?;
+                let highlight = Self::create_highlight(&content, query);
+
+                Ok(SearchResult {
+                    result_type: "transcript".to_string(),
+                    session_id: row.get(0)?,
+                    session_title: row.get(1)?,
+                    content: content.clone(),
+                    created_at: row.get(3)?,
+                    highlight: Some(highlight),
+                })
+            })?
+            .collect::<SqliteResult<Vec<_>>>()?;
+
+        results.extend(transcript_results);
+
+        // Sort all results by created_at descending
+        results.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+        Ok(results)
+    }
+
+    /// Create a text highlight snippet around the search term
+    fn create_highlight(text: &str, query: &str) -> String {
+        let query_lower = query.to_lowercase();
+        let text_lower = text.to_lowercase();
+
+        if let Some(pos) = text_lower.find(&query_lower) {
+            let start = pos.saturating_sub(50);
+            let end = (pos + query.len() + 50).min(text.len());
+
+            let prefix = if start > 0 { "..." } else { "" };
+            let suffix = if end < text.len() { "..." } else { "" };
+
+            format!("{}{}{}", prefix, &text[start..end], suffix)
+        } else {
+            // Fallback: return first 100 characters
+            if text.len() > 100 {
+                format!("{}...", &text[..100])
+            } else {
+                text.to_string()
+            }
+        }
+    }
+
     // ===== User-Created Prompts (Issue #3) =====
 
     pub fn list_user_prompts(&self) -> SqliteResult<Vec<Prompt>> {
