@@ -520,6 +520,10 @@ fn main() {
             commands::git_get_publish_status,
             commands::git_publish_cards,
             commands::git_get_publishable_count,
+            // Research API Integration Commands (Issue #126)
+            commands::enrich_content,
+            commands::check_enrichment_status,
+            commands::test_research_connection,
             // Search Commands (OMICRON-2 Issue #75)
             commands::search_all,
             // Model Manager Commands
