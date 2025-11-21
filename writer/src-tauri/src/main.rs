@@ -11,6 +11,9 @@ use tauri::Emitter;
 
 mod commands;
 
+#[cfg(test)]
+mod commands_test;
+
 fn import_env_keys_to_keychain() {
     use keyring::Entry;
 
