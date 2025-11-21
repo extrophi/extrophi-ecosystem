@@ -1522,3 +1522,40 @@ pub async fn git_get_publishable_count(state: State<'_, AppState>) -> Result<usi
 
     Ok(cards.len())
 }
+
+// ============================================================================
+// Search Commands (OMICRON-2 Issue #75)
+// ============================================================================
+
+use braindump::db::models::{SearchFilters, SearchResult};
+
+/// Search across sessions, transcripts, and messages
+#[tauri::command]
+pub async fn search_all(
+    query: String,
+    tags: Option<Vec<i64>>,
+    start_date: Option<String>,
+    end_date: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<SearchResult>, BrainDumpError> {
+    braindump::logging::info("Search", &format!("Searching for: {}", query));
+
+    if query.len() < 2 {
+        return Ok(Vec::new());
+    }
+
+    let filters = SearchFilters {
+        tags,
+        start_date,
+        end_date,
+    };
+
+    let db = state.db.lock();
+    let results = db
+        .search_all(&query, filters)
+        .map_err(|e| BrainDumpError::Database(DatabaseError::ReadFailed(e.to_string())))?;
+
+    braindump::logging::info("Search", &format!("Found {} results", results.len()));
+
+    Ok(results)
+}

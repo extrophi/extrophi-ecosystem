@@ -513,6 +513,8 @@ fn main() {
             commands::git_get_publish_status,
             commands::git_publish_cards,
             commands::git_get_publishable_count,
+            // Search Commands (OMICRON-2 Issue #75)
+            commands::search_all,
             // Model Manager Commands
             services::model_manager::get_available_models,
             services::model_manager::get_installed_models,
