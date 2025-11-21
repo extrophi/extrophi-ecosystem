@@ -1,8 +1,10 @@
 """FastAPI main application."""
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from backend.api.middleware.cors import setup_cors
+from backend.api.middleware.security_headers import setup_security_headers
 from backend.api.routes import (
     analyze_router,
     api_keys_router,
@@ -13,6 +15,8 @@ from backend.api.routes import (
     scrape_router,
     tokens_router,
 )
+from backend.security.audit_log import AuditLogger
+from backend.security.rate_limiting import get_rate_limiter
 
 app = FastAPI(
     title="IAC-032 Unified Scraper",
@@ -20,7 +24,32 @@ app = FastAPI(
     description="Multi-platform content intelligence engine with $EXTROPY token system",
 )
 
+# Initialize security components
+audit_logger = AuditLogger()
+rate_limiter = get_rate_limiter()
+
+# Setup middleware
 setup_cors(app)
+setup_security_headers(app)
+
+
+# Rate limiting middleware
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    """Apply rate limiting to all requests."""
+    client_ip = request.client.host
+    endpoint = request.url.path
+
+    # Skip rate limiting for health check
+    if endpoint == "/health":
+        return await call_next(request)
+
+    # Check rate limit
+    if not await rate_limiter.check_rate_limit(client_ip, endpoint):
+        audit_logger.log_rate_limit_exceeded(client_ip, endpoint, rate_limiter.max_requests)
+        return JSONResponse(status_code=429, content={"detail": "Too many requests"})
+
+    return await call_next(request)
 
 # Register all routers
 app.include_router(health_router)
