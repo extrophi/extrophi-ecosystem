@@ -4,8 +4,6 @@ import os
 from datetime import datetime
 from typing import Any
 
-import praw
-
 from backend.scrapers.base import (
     AuthorModel,
     BaseScraper,
@@ -27,6 +25,9 @@ class RedditScraper(BaseScraper):
     """
 
     def __init__(self) -> None:
+        # Lazy import to avoid circular import issues with 'queue' module
+        import praw
+
         self.reddit = praw.Reddit(
             client_id=os.getenv("REDDIT_CLIENT_ID", ""),
             client_secret=os.getenv("REDDIT_CLIENT_SECRET", ""),
