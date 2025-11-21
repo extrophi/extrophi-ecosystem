@@ -35,6 +35,13 @@ dependencies = [
     "yt-dlp>=2023.11.16",
     "httpx>=0.25.0",
 
+    # Security (OWASP Top 10)
+    "cryptography>=41.0.0",  # A02: Encryption
+    "passlib[bcrypt]>=1.7.4",  # A07: Password hashing
+    "python-jose[cryptography]>=3.3.0",  # A07: JWT tokens
+    "safety>=3.0.0",  # A06: Vulnerability scanning
+    "pip-audit>=2.6.0",  # A06: Alternative vulnerability scanner
+
     # Utilities
     "python-dotenv>=1.0.0",
     "python-multipart>=0.0.6",
