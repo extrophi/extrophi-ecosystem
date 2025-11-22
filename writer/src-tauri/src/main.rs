@@ -524,6 +524,10 @@ fn main() {
             commands::enrich_content,
             commands::check_enrichment_status,
             commands::test_research_connection,
+            // Research Database Integration Commands (Agent #9)
+            commands::test_research_db_connection,
+            commands::search_knowledge,
+            commands::get_research_stats,
             // Search Commands (OMICRON-2 Issue #75)
             commands::search_all,
             // Model Manager Commands
