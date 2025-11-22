@@ -14,6 +14,7 @@ from backend.api.routes import (
     query_router,
     scrape_router,
     tokens_router,
+    ultra_learning_router,
 )
 from backend.security.audit_log import AuditLogger
 from backend.security.rate_limiting import get_rate_limiter
@@ -60,6 +61,7 @@ app.include_router(api_keys_router)
 app.include_router(tokens_router)
 app.include_router(publish_router)
 app.include_router(attributions_router)
+app.include_router(ultra_learning_router)
 
 
 @app.get("/")

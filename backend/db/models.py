@@ -429,6 +429,48 @@ class AttributionORM(Base):
         return f"<AttributionORM(id={self.id}, type={self.attribution_type})>"
 
 
+class UltraLearningORM(Base):
+    """ORM model for ultra learning formatted content"""
+
+    __tablename__ = "ultra_learning"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    content_id = Column(UUID(as_uuid=True), ForeignKey("contents.id", ondelete="CASCADE"), unique=True, nullable=False)
+
+    # Original content metadata
+    title = Column(Text, nullable=False)
+    link = Column(Text, nullable=False)
+    platform = Column(String(50), nullable=False)
+    author_id = Column(String(255), nullable=False)
+
+    # Ultra Learning structured data
+    meta_subject = Column(Text, nullable=False)
+    concepts = Column(ARRAY(Text), default=[])
+    facts = Column(ARRAY(Text), default=[])
+    procedures = Column(ARRAY(Text), default=[])
+
+    # Processing metadata
+    llm_model = Column(String(100), default="claude-haiku-4-20250514")
+    tokens_used = Column(Integer, nullable=True)
+    cost_cents = Column(Integer, nullable=True)
+    processing_time_ms = Column(Integer, nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        Index("idx_ultra_learning_content_id", "content_id"),
+        Index("idx_ultra_learning_meta_subject", "meta_subject"),
+        Index("idx_ultra_learning_platform", "platform"),
+        Index("idx_ultra_learning_author_id", "author_id"),
+        Index("idx_ultra_learning_created_at", "created_at"),
+    )
+
+    def __repr__(self):
+        return f"<UltraLearningORM(id={self.id}, meta_subject={self.meta_subject}, content_id={self.content_id})>"
+
+
 # ============================================================================
 # Pydantic v2 Schemas
 # ============================================================================
@@ -628,6 +670,30 @@ class AttributionModel(BaseModel):
     extropy_transferred: Decimal = Decimal("0.00000000")
     extra_metadata: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Config:
+        from_attributes = True
+
+
+class UltraLearningModel(BaseModel):
+    """Pydantic model for ultra learning formatted content"""
+
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    content_id: str
+    title: str
+    link: str
+    platform: str
+    author_id: str
+    meta_subject: str
+    concepts: List[str] = Field(default_factory=list)
+    facts: List[str] = Field(default_factory=list)
+    procedures: List[str] = Field(default_factory=list)
+    llm_model: str = "claude-haiku-4-20250514"
+    tokens_used: Optional[int] = None
+    cost_cents: Optional[int] = None
+    processing_time_ms: Optional[int] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     class Config:
         from_attributes = True
