@@ -451,6 +451,13 @@ fn main() {
             commands::get_messages,
             commands::list_prompt_templates,
             commands::get_prompt_template,
+            // Card Template Commands (V9)
+            commands::list_card_templates,
+            commands::get_card_template,
+            commands::get_card_template_by_name,
+            commands::create_card_template,
+            commands::update_card_template,
+            commands::delete_card_template,
             // Claude API Commands
             commands::send_message_to_claude,
             commands::store_api_key,
