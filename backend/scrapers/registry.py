@@ -80,6 +80,13 @@ def _auto_register():
     except ImportError:
         pass
 
+    try:
+        from backend.scrapers.adapters.hormozi import HormoziScraper
+
+        register_scraper("hormozi", HormoziScraper)
+    except ImportError:
+        pass
+
 
 # Auto-register on module load
 _auto_register()
