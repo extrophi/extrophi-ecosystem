@@ -1,0 +1,16 @@
+# Grafana Dashboard Provisioning
+# PROD-GAMMA Monitoring Stack
+
+apiVersion: 1
+
+providers:
+  - name: 'Extrophi Dashboards'
+    orgId: 1
+    folder: 'Extrophi'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: false

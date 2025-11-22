@@ -1,0 +1,121 @@
+# AlertManager Configuration for Extrophi Ecosystem
+# PROD-GAMMA Monitoring Stack
+
+global:
+  resolve_timeout: 5m
+  # Configure SMTP settings for email notifications
+  smtp_smarthost: 'localhost:25'
+  smtp_from: 'alertmanager@extrophi.local'
+  smtp_require_tls: false
+
+# Templates for alert notifications
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Route tree for alerts
+route:
+  # Default receiver for all alerts
+  receiver: 'default'
+
+  # Group alerts by these labels
+  group_by: ['alertname', 'cluster', 'service']
+
+  # Wait time before sending notification for a group
+  group_wait: 10s
+
+  # Wait time before sending notification about new alerts in group
+  group_interval: 10s
+
+  # Wait time before resending notification
+  repeat_interval: 12h
+
+  # Child routes
+  routes:
+    # Critical alerts - immediate notification
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      group_wait: 0s
+      repeat_interval: 5m
+      continue: true
+
+    # Infrastructure alerts
+    - match:
+        category: infrastructure
+      receiver: 'infrastructure-team'
+      group_interval: 5m
+
+    # Application alerts
+    - match:
+        category: application
+      receiver: 'application-team'
+      group_interval: 5m
+
+    # Database alerts
+    - match:
+        service: postgresql
+      receiver: 'database-team'
+
+# Inhibition rules - suppress alerts when other alerts are firing
+inhibit_rules:
+  # If instance is down, suppress all other alerts for that instance
+  - source_match:
+      severity: 'critical'
+      alertname: 'InstanceDown'
+    target_match_re:
+      severity: 'warning|info'
+    equal: ['instance']
+
+  # If node is down, suppress container alerts
+  - source_match:
+      alertname: 'NodeDown'
+    target_match:
+      service: 'cadvisor'
+    equal: ['instance']
+
+# Receivers - notification channels
+receivers:
+  # Default receiver (logs only)
+  - name: 'default'
+    webhook_configs:
+      - url: 'http://localhost:5001/webhook'
+        send_resolved: true
+
+  # Critical alerts - multiple channels
+  - name: 'critical-alerts'
+    # Email notifications
+    email_configs:
+      - to: 'oncall@extrophi.local'
+        headers:
+          Subject: '[CRITICAL] Extrophi Ecosystem Alert'
+        html: '{{ template "email.default.html" . }}'
+        send_resolved: true
+
+    # Webhook for integration with other systems
+    webhook_configs:
+      - url: 'http://localhost:5001/webhook/critical'
+        send_resolved: true
+
+  # Infrastructure team
+  - name: 'infrastructure-team'
+    email_configs:
+      - to: 'infra@extrophi.local'
+        headers:
+          Subject: '[Infrastructure] {{ .GroupLabels.alertname }}'
+        send_resolved: true
+
+  # Application team
+  - name: 'application-team'
+    email_configs:
+      - to: 'dev@extrophi.local'
+        headers:
+          Subject: '[Application] {{ .GroupLabels.alertname }}'
+        send_resolved: true
+
+  # Database team
+  - name: 'database-team'
+    email_configs:
+      - to: 'dba@extrophi.local'
+        headers:
+          Subject: '[Database] {{ .GroupLabels.alertname }}'
+        send_resolved: true
