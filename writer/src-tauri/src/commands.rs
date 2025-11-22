@@ -1777,3 +1777,16 @@ pub async fn search_all(
 
     Ok(results)
 }
+
+// ============================================================================
+// Research Database Integration Commands (Agent #9 - Research Panel)
+// ============================================================================
+
+pub mod research;
+
+// Re-export research commands for easier access
+pub use research::{
+    test_research_db_connection,
+    search_knowledge,
+    get_research_stats,
+};

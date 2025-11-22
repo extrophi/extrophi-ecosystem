@@ -6,6 +6,7 @@
   import TemplateSelector from './components/TemplateSelector.svelte';
   import SettingsPanel from './components/SettingsPanel.svelte';
   import ChatPanel from './components/ChatPanel.svelte';
+  import ResearchPanel from './components/ResearchPanel.svelte';
   import WaveformVisualizer from './components/WaveformVisualizer.svelte';
   import RecordingControls from './components/RecordingControls.svelte';
   import AudioLevelMeter from './components/AudioLevelMeter.svelte';
@@ -55,7 +56,7 @@
   // Claude integration state
   let isSendingToClaude = $state(false);
   let claudeError = $state('');
-  let currentView = $state('chat'); // 'chat', 'transcript', 'prompts', or 'stats'
+  let currentView = $state('chat'); // 'chat', 'transcript', 'prompts', 'stats', or 'research'
 
   // Keyboard shortcuts state
   let showShortcutsHelp = $state(false);
@@ -795,6 +796,13 @@
         </button>
         <button
           class="tab-btn"
+          class:active={currentView === 'research'}
+          onclick={() => currentView = 'research'}
+        >
+          🎯 Research
+        </button>
+        <button
+          class="tab-btn"
           class:active={currentView === 'prompts'}
           onclick={() => currentView = 'prompts'}
         >
@@ -823,6 +831,11 @@
       <!-- Chat View -->
       {#if currentView === 'chat'}
         <ChatPanel bind:messages={messages} bind:currentSession={currentSession} />
+      {:else if currentView === 'research'}
+        <ResearchPanel onInsert={(content) => {
+          // Insert research content into current transcript
+          currentTranscript = currentTranscript ? `${currentTranscript}\n\n${content}` : content;
+        }} />
       {:else if currentView === 'prompts'}
         <PromptManager />
       {:else if currentView === 'stats'}
