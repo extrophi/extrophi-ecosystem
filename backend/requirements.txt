@@ -24,6 +24,7 @@ playwright>=1.40.0
 praw>=7.7.0
 youtube-transcript-api>=0.6.0
 httpx>=0.25.0
+twscrape>=0.7.0
 
 # Utilities
 python-dotenv>=1.0.0

@@ -80,6 +80,13 @@ def _auto_register():
     except ImportError:
         pass
 
+    try:
+        from backend.scrapers.elon import ElonScraper
+
+        register_scraper("elon", ElonScraper)
+    except ImportError:
+        pass
+
 
 # Auto-register on module load
 _auto_register()
