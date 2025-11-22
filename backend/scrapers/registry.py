@@ -80,6 +80,13 @@ def _auto_register():
     except ImportError:
         pass
 
+    try:
+        from backend.scrapers.adapters.throssell import ThrossellScraper
+
+        register_scraper("throssell", ThrossellScraper)
+    except ImportError:
+        pass
+
 
 # Auto-register on module load
 _auto_register()
