@@ -146,6 +146,25 @@ CREATE INDEX IF NOT EXISTS idx_scrape_jobs_status ON scrape_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_scrape_jobs_platform ON scrape_jobs(platform);
 CREATE INDEX IF NOT EXISTS idx_scrape_jobs_created_at ON scrape_jobs(created_at);
 
+-- Scraper usage tracking table: Monitor ScraperAPI and other service usage
+CREATE TABLE IF NOT EXISTS scraper_usage (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    scraper_type VARCHAR(50) NOT NULL,
+    url TEXT NOT NULL,
+    status VARCHAR(50) NOT NULL,
+    credits_used INTEGER DEFAULT 0,
+    response_code INTEGER,
+    error_message TEXT,
+    elapsed_time DECIMAL(10, 3),
+    scraped_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create indices for scraper usage
+CREATE INDEX IF NOT EXISTS idx_scraper_usage_scraper_type ON scraper_usage(scraper_type);
+CREATE INDEX IF NOT EXISTS idx_scraper_usage_status ON scraper_usage(status);
+CREATE INDEX IF NOT EXISTS idx_scraper_usage_scraped_at ON scraper_usage(scraped_at);
+CREATE INDEX IF NOT EXISTS idx_scraper_usage_type_status ON scraper_usage(scraper_type, status);
+
 -- Create or update function for updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
@@ -171,6 +190,7 @@ COMMENT ON TABLE patterns IS 'Detected cross-platform patterns (elaboration, the
 COMMENT ON TABLE research_sessions IS 'Tracks research sessions, queries, and generated outputs (course scripts, briefs)';
 COMMENT ON TABLE content_analysis IS 'Detailed LLM analysis results for each piece of content';
 COMMENT ON TABLE scrape_jobs IS 'Monitoring and tracking of scraping jobs across platforms';
+COMMENT ON TABLE scraper_usage IS 'Tracks ScraperAPI and other service usage with credit consumption and performance metrics';
 
 COMMENT ON COLUMN contents.embedding IS 'OpenAI embedding (1536 dimensions) for semantic search via pgvector';
 COMMENT ON COLUMN contents.metrics IS 'Platform-specific metrics: likes, views, retweets, engagement_rate, etc.';

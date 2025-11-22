@@ -34,6 +34,7 @@ dependencies = [
     "youtube-transcript-api>=0.6.0",
     "yt-dlp>=2023.11.16",
     "httpx>=0.25.0",
+    "scraperapi-sdk>=1.6.0",
 
     # Security (OWASP Top 10)
     "cryptography>=41.0.0",  # A02: Encryption
