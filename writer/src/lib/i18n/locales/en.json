@@ -1,0 +1,25 @@
+{
+  "app": {
+    "title": "BrainDump",
+    "version": "3.0"
+  },
+  "recording": {
+    "start": "Start Recording",
+    "stop": "Stop Recording",
+    "ready": "Ready",
+    "recording": "Recording...",
+    "transcribing": "Transcribing..."
+  },
+  "privacy": {
+    "title": "Privacy Scanner",
+    "danger": "Sensitive Information Detected",
+    "caution": "Potentially Sensitive Content",
+    "info": "No Privacy Issues"
+  },
+  "settings": {
+    "title": "Settings",
+    "api_keys": "API Keys",
+    "language": "Language",
+    "theme": "Theme"
+  }
+}
