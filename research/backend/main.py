@@ -21,6 +21,12 @@ from db import get_db_manager, ContentCRUD, SourceCRUD, ScrapeJobCRUD, VectorSea
 # Import enrichment engine
 from enrichment import EnrichmentEngine
 
+# Import WebSocket routes
+from api.routes.ws import router as ws_router
+
+# Import scraping service
+from scraping import scraping_service
+
 # Load environment variables
 load_dotenv()
 
@@ -54,6 +60,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include WebSocket routes
+app.include_router(ws_router)
 
 
 # ============================================================================
@@ -265,13 +274,17 @@ async def enrich_card(request: EnrichRequest):
 @app.post("/api/scrape", response_model=ScrapeResponse, status_code=status.HTTP_202_ACCEPTED, tags=["Scraping"])
 async def trigger_scrape(request: ScrapeRequest):
     """
-    Trigger content scraping job
+    Trigger content scraping job with real-time WebSocket updates
 
     Initiates asynchronous scraping of specified URL. Supports multiple platforms:
     - Twitter/X profiles and threads
     - YouTube videos (transcript + metadata)
     - Reddit posts and threads
     - Generic web pages
+
+    Real-time updates available via WebSocket:
+    - Connect to /ws/scraping/{job_id} for job-specific updates
+    - Connect to /ws/scraping for all scraping updates
 
     - **url**: URL to scrape
     - **platform**: Optional platform hint for specialized scraper
@@ -280,23 +293,39 @@ async def trigger_scrape(request: ScrapeRequest):
     """
     logger.info(f"Scrape requested for url={request.url}, platform={request.platform}, depth={request.depth}")
 
-    # TODO: This is a skeleton implementation
-    # Actual scraping logic will be implemented by IOTA agent
-    # Job queue and status tracking will be added by MU agent
+    # Auto-detect platform if not provided
+    platform = request.platform or _detect_platform(str(request.url))
 
-    import uuid
-    job_id = str(uuid.uuid4())
+    # Start async scraping job with WebSocket progress updates
+    job_id = await scraping_service.start_scraping_job(
+        url=str(request.url),
+        platform=platform,
+        depth=request.depth,
+        limit=20,  # TODO: Make configurable
+        extract_embeddings=request.extract_embeddings
+    )
 
-    # Placeholder response
-    logger.info(f"Scrape job created: job_id={job_id}, url={request.url}")
+    logger.info(f"Scrape job started: job_id={job_id}, url={request.url}, platform={platform}")
 
     return ScrapeResponse(
         job_id=job_id,
-        status="pending",
+        status="started",
         url=request.url,
-        estimated_time_seconds=30,
-        message=f"Scraping job queued. Platform: {request.platform or 'auto-detect'}, Depth: {request.depth}",
+        estimated_time_seconds=20 * 0.5,  # 0.5s per item estimate
+        message=f"Scraping job started. Connect to /ws/scraping/{job_id} for real-time updates.",
     )
+
+
+def _detect_platform(url: str) -> str:
+    """Auto-detect platform from URL."""
+    if "twitter.com" in url or "x.com" in url:
+        return "twitter"
+    elif "youtube.com" in url or "youtu.be" in url:
+        return "youtube"
+    elif "reddit.com" in url:
+        return "reddit"
+    else:
+        return "web"
 
 
 @app.get("/", tags=["Root"])
