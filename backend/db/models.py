@@ -471,6 +471,41 @@ class UltraLearningORM(Base):
         return f"<UltraLearningORM(id={self.id}, meta_subject={self.meta_subject}, content_id={self.content_id})>"
 
 
+class ScrapeJobORM(Base):
+    """ORM model for tracking scrape jobs"""
+
+    __tablename__ = "scrape_jobs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    platform = Column(String(50), nullable=False)
+    target = Column(Text, nullable=False)
+    limit = Column(Integer, default=20)
+
+    # Job status: pending, processing, completed, failed
+    status = Column(String(50), default="pending", nullable=False)
+
+    # Results
+    content_ids = Column(ARRAY(UUID), default=[], nullable=True)
+    error_message = Column(Text, nullable=True)
+
+    # Progress tracking
+    items_scraped = Column(Integer, default=0)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("idx_scrape_jobs_status", "status"),
+        Index("idx_scrape_jobs_platform", "platform"),
+        Index("idx_scrape_jobs_created_at", "created_at"),
+    )
+
+    def __repr__(self):
+        return f"<ScrapeJobORM(id={self.id}, platform={self.platform}, status={self.status})>"
+
+
 # ============================================================================
 # Pydantic v2 Schemas
 # ============================================================================
@@ -754,3 +789,22 @@ class APIKeyListResponse(BaseModel):
 
     keys: List[APIKeyModel]
     total: int
+
+
+class ScrapeJobModel(BaseModel):
+    """Pydantic model for scrape jobs"""
+
+    id: str = Field(default_factory=lambda: str(uuid4()))
+    platform: str
+    target: str
+    limit: int = 20
+    status: str = "pending"
+    content_ids: List[str] = Field(default_factory=list)
+    error_message: Optional[str] = None
+    items_scraped: int = 0
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
