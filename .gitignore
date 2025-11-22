@@ -129,6 +129,10 @@ data/
 # Scraped content cache
 cache/
 
+# Scraper output directories
+hormozi_scraper_output/
+*_scraper_output/
+
 # Session files
 *_session.json
 cookies.txt
