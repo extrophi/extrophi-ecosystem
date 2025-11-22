@@ -80,6 +80,13 @@ def _auto_register():
     except ImportError:
         pass
 
+    try:
+        from backend.scrapers.adapters.naval import NavalScraper
+
+        register_scraper("naval", NavalScraper)
+    except ImportError:
+        pass
+
 
 # Auto-register on module load
 _auto_register()
