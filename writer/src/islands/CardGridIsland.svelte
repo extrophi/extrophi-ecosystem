@@ -1,24 +1,40 @@
 <script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
   import type { Card, CardCategory } from '../lib/card-types';
   import { getAllCategories, getCategoryConfig } from '../lib/card-types';
   import { classifyText, getLevelColor } from '../lib/privacy-rules';
   import type { PrivacyLevel } from '../lib/privacy-rules';
+  import {
+    initVimShortcuts,
+    registerShortcutCallbacks,
+    selectedCardIndex,
+    totalCards,
+    keyboardMode,
+  } from '../lib/keyboard/shortcuts';
 
   // Props using Svelte 5 runes
   let {
     cards = [],
     onCardMove = null,
     onCardClick = null,
+    onCardCreate = null,
+    onCardEdit = null,
+    onCardDelete = null,
   }: {
     cards: Card[];
     onCardMove?: ((cardId: string, newCategory: CardCategory) => void) | null;
     onCardClick?: ((card: Card) => void) | null;
+    onCardCreate?: (() => void) | null;
+    onCardEdit?: ((card: Card) => void) | null;
+    onCardDelete?: ((card: Card) => void) | null;
   } = $props();
 
   // State using Svelte 5 runes
   let draggedCard = $state<Card | null>(null);
   let dragOverCategory = $state<CardCategory | null>(null);
   let activeFilters = $state<Set<CardCategory>>(new Set());
+  let searchInputRef = $state<HTMLInputElement | null>(null);
+  let cleanupShortcuts: (() => void) | null = null;
 
   // Derived state: cards grouped by category
   let cardsByCategory = $derived(() => {
@@ -135,12 +151,153 @@
   function getPrivacyBadgeColor(level: PrivacyLevel): string {
     return getLevelColor(level);
   }
+
+  /**
+   * Get flat list of all cards for keyboard navigation
+   */
+  function getFlatCardList(): Card[] {
+    const flat: Card[] = [];
+    const grouped = cardsByCategory();
+
+    getAllCategories().forEach(category => {
+      flat.push(...grouped[category]);
+    });
+
+    return flat;
+  }
+
+  /**
+   * Get currently selected card
+   */
+  function getSelectedCard(): Card | null {
+    const flatCards = getFlatCardList();
+    const index = $selectedCardIndex;
+
+    if (index >= 0 && index < flatCards.length) {
+      return flatCards[index];
+    }
+
+    return null;
+  }
+
+  /**
+   * Focus search input
+   */
+  function focusSearch() {
+    if (searchInputRef) {
+      searchInputRef.focus();
+    }
+  }
+
+  /**
+   * Navigate to next card
+   */
+  function navigateDown() {
+    const flatCards = getFlatCardList();
+    const current = $selectedCardIndex;
+
+    if (current < flatCards.length - 1) {
+      selectedCardIndex.set(current + 1);
+    }
+  }
+
+  /**
+   * Navigate to previous card
+   */
+  function navigateUp() {
+    const current = $selectedCardIndex;
+
+    if (current > 0) {
+      selectedCardIndex.set(current - 1);
+    }
+  }
+
+  /**
+   * Handle new card creation
+   */
+  function handleNewCard() {
+    if (onCardCreate) {
+      onCardCreate();
+    }
+  }
+
+  /**
+   * Handle card edit
+   */
+  function handleEditCard() {
+    const card = getSelectedCard();
+    if (card && onCardEdit) {
+      onCardEdit(card);
+    }
+  }
+
+  /**
+   * Handle card deletion
+   */
+  function handleDeleteCard() {
+    const card = getSelectedCard();
+    if (card && onCardDelete) {
+      onCardDelete(card);
+    }
+  }
+
+  /**
+   * Handle escape key
+   */
+  function handleEscape() {
+    // Clear selection
+    selectedCardIndex.set(-1);
+  }
+
+  // Update total cards count when cards change
+  $effect(() => {
+    totalCards.set(cards.length);
+  });
+
+  // Initialize vim shortcuts on mount
+  onMount(() => {
+    cleanupShortcuts = initVimShortcuts();
+
+    // Register callbacks
+    registerShortcutCallbacks({
+      onNavigateUp: navigateUp,
+      onNavigateDown: navigateDown,
+      onFocusSearch: focusSearch,
+      onNewCard: handleNewCard,
+      onEditCard: handleEditCard,
+      onDeleteCard: handleDeleteCard,
+      onEscape: handleEscape,
+    });
+  });
+
+  // Cleanup on destroy
+  onDestroy(() => {
+    if (cleanupShortcuts) {
+      cleanupShortcuts();
+    }
+  });
 </script>
 
 <div class="card-grid-island">
+  <!-- Keyboard mode indicator -->
+  {#if $keyboardMode === 'insert'}
+    <div class="mode-indicator">
+      <span class="mode-badge">INSERT MODE</span>
+      <span class="mode-hint">Press Esc to return to normal mode</span>
+    </div>
+  {/if}
+
   <!-- Filter Bar -->
   <div class="filter-bar">
-    <div class="filter-label">Filter by category:</div>
+    <div class="filter-header">
+      <div class="filter-label">Filter by category:</div>
+      <input
+        type="text"
+        placeholder="Search cards... (press /)"
+        class="card-search-input"
+        bind:this={searchInputRef}
+      />
+    </div>
     <div class="filter-buttons">
       {#each getAllCategories() as category}
         {@const config = getCategoryConfig(category)}
@@ -190,10 +347,15 @@
 
         <!-- Cards List -->
         <div class="cards-list">
-          {#each categoryCards as card (card.id)}
+          {#each categoryCards as card, index (card.id)}
+            {@const flatCards = getFlatCardList()}
+            {@const flatIndex = flatCards.findIndex(c => c.id === card.id)}
+            {@const isSelected = flatIndex === $selectedCardIndex}
+
             <div
               class="card"
               class:dragging={draggedCard?.id === card.id}
+              class:selected={isSelected}
               draggable="true"
               ondragstart={handleDragStart(card)}
               ondragend={handleDragEnd}
@@ -252,6 +414,42 @@
     gap: 24px;
   }
 
+  /* Mode Indicator */
+  .mode-indicator {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 8px;
+    margin-bottom: 16px;
+    animation: slideDown 0.3s ease-out;
+  }
+
+  @keyframes slideDown {
+    from {
+      transform: translateY(-10px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  .mode-badge {
+    font-size: 12px;
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: 1px;
+  }
+
+  .mode-hint {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.9);
+    font-weight: 500;
+  }
+
   /* Filter Bar */
   .filter-bar {
     display: flex;
@@ -263,10 +461,40 @@
     border-radius: 8px;
   }
 
+  .filter-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
   .filter-label {
     font-size: 14px;
     font-weight: 600;
     color: #333333;
+  }
+
+  .card-search-input {
+    flex: 1;
+    max-width: 300px;
+    padding: 8px 12px;
+    border: 1px solid #d0d0d0;
+    border-radius: 6px;
+    font-size: 14px;
+    background: #fafafa;
+    color: #333333;
+    outline: none;
+    transition: all 0.2s ease;
+  }
+
+  .card-search-input:focus {
+    border-color: #007aff;
+    background: #ffffff;
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+  }
+
+  .card-search-input::placeholder {
+    color: #999999;
   }
 
   .filter-buttons {
@@ -407,6 +635,7 @@
 
   /* Card */
   .card {
+    position: relative;
     display: flex;
     flex-direction: column;
     padding: 12px;
@@ -426,6 +655,24 @@
   .card.dragging {
     opacity: 0.5;
     transform: scale(0.95);
+  }
+
+  .card.selected {
+    border-color: #007aff;
+    background: #f0f8ff;
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.2), 0 4px 12px rgba(0, 0, 0, 0.15);
+    transform: translateY(-2px);
+  }
+
+  .card.selected::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #007aff 0%, #5856d6 100%);
+    border-radius: 6px 6px 0 0;
   }
 
   /* Card Header */
