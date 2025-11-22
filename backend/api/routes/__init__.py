@@ -8,6 +8,7 @@ from backend.api.routes.publish import router as publish_router
 from backend.api.routes.query import router as query_router
 from backend.api.routes.scrape import router as scrape_router
 from backend.api.routes.tokens import router as tokens_router
+from backend.api.routes.ultra_learning import router as ultra_learning_router
 
 __all__ = [
     "health_router",
@@ -18,4 +19,5 @@ __all__ = [
     "tokens_router",
     "publish_router",
     "attributions_router",
+    "ultra_learning_router",
 ]
