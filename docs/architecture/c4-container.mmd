@@ -1,0 +1,101 @@
+graph TB
+    %% C4 Container Diagram - Extrophi Ecosystem
+    %% Shows containers (applications, data stores) within each system
+
+    U1[👤 Knowledge Worker]
+    U2[👤 Content Researcher]
+    U3[👤 Administrator]
+
+    subgraph bd["🎙️ BrainDump Writer (Tauri Desktop App)"]
+        direction TB
+        BDUI[Svelte 5 Frontend<br/>Voice UI + Chat]
+        BDRUST[Rust Backend<br/>Tauri Commands]
+        BDWHISPER[Whisper.cpp Plugin<br/>Local Transcription]
+        BDCANDLE[Candle Plugin<br/>Pure Rust ML]
+        BDDB[(SQLite<br/>Sessions, Messages,<br/>Recordings)]
+        BDGIT[Git Publisher<br/>Markdown Export]
+    end
+
+    subgraph scraper["🔍 IAC-032 Scraper Backend"]
+        direction TB
+        API[FastAPI Application<br/>REST Endpoints]
+        SCRAPERS[Scraper Adapters<br/>Twitter, YouTube,<br/>Reddit, Web]
+        ANALYSIS[LLM Analysis<br/>Pattern Detection]
+        VECTOR[Vector Store<br/>ChromaDB RAG]
+        QUEUE[Job Queue<br/>Celery + Redis]
+        SCRDB[(PostgreSQL<br/>+ pgvector<br/>Content, Authors,<br/>Patterns, Cards)]
+    end
+
+    subgraph admin["📊 Admin Dashboard"]
+        direction TB
+        ADMUI[Web UI<br/>FastAPI + Templates]
+        ADMAPI[Management API<br/>Metrics, Status]
+    end
+
+    subgraph ext["External Services"]
+        TWITTER_API[Twitter/X API]
+        YT_API[YouTube API]
+        REDDIT_API[Reddit API]
+        JINA[Jina.ai Reader]
+        OPENAI_API[OpenAI API]
+        CLAUDE_API[Claude API]
+        GITHUB[GitHub]
+    end
+
+    %% User interactions
+    U1 -->|"Desktop app"| BDUI
+    U2 -->|"HTTP/REST"| API
+    U3 -->|"Web browser"| ADMUI
+
+    %% BrainDump internal
+    BDUI -->|"Commands"| BDRUST
+    BDRUST -->|"Transcribe"| BDWHISPER
+    BDRUST -->|"Transcribe"| BDCANDLE
+    BDRUST -->|"CRUD"| BDDB
+    BDRUST -->|"Publish"| BDGIT
+    BDRUST -->|"Chat"| OPENAI_API
+    BDRUST -->|"Chat"| CLAUDE_API
+
+    %% BrainDump to Scraper
+    BDGIT -->|"POST /publish"| API
+    BDRUST -->|"Store cards"| API
+
+    %% Scraper internal
+    API -->|"Dispatch jobs"| QUEUE
+    API -->|"Scrape"| SCRAPERS
+    API -->|"Analyze"| ANALYSIS
+    API -->|"Search"| VECTOR
+    API -->|"Store/Query"| SCRDB
+
+    QUEUE -->|"Run scraping"| SCRAPERS
+    QUEUE -->|"Run analysis"| ANALYSIS
+
+    SCRAPERS -->|"Platform APIs"| TWITTER_API
+    SCRAPERS -->|"Platform APIs"| YT_API
+    SCRAPERS -->|"Platform APIs"| REDDIT_API
+    SCRAPERS -->|"Fetch content"| JINA
+    SCRAPERS -->|"Save"| SCRDB
+
+    ANALYSIS -->|"LLM requests"| OPENAI_API
+    ANALYSIS -->|"Polish copy"| CLAUDE_API
+    ANALYSIS -->|"Generate embeddings"| OPENAI_API
+    ANALYSIS -->|"Store vectors"| SCRDB
+    ANALYSIS -->|"Index"| VECTOR
+
+    %% Admin
+    ADMUI -->|"Queries"| ADMAPI
+    ADMAPI -->|"Fetch metrics"| SCRDB
+    ADMAPI -->|"Health checks"| API
+
+    %% Styling
+    classDef frontend fill:#61DAFB,stroke:#21A1C4,color:#000
+    classDef backend fill:#50C878,stroke:#2E7D4E,color:#fff
+    classDef database fill:#9B59B6,stroke:#6C3483,color:#fff
+    classDef external fill:#F5A623,stroke:#C17D11,color:#fff
+    classDef service fill:#E74C3C,stroke:#922B21,color:#fff
+
+    class BDUI,ADMUI frontend
+    class BDRUST,BDWHISPER,BDCANDLE,API,SCRAPERS,ANALYSIS,ADMAPI backend
+    class BDDB,SCRDB database
+    class TWITTER_API,YT_API,REDDIT_API,JINA,OPENAI_API,CLAUDE_API,GITHUB external
+    class QUEUE,VECTOR,BDGIT service

@@ -1,0 +1,116 @@
+sequenceDiagram
+    %% Content Scraping and Analysis Flow
+    participant Client as API Client
+    participant API as FastAPI
+    participant Auth as API Key Auth
+    participant Queue as Celery Queue
+    participant Scraper as Twitter Scraper
+    participant Platform as Twitter API
+    participant LLM as OpenAI API
+    participant Cache as Redis
+    participant DB as PostgreSQL
+    participant Vector as ChromaDB
+
+    Note over Client,Vector: Content Scraping & Analysis Flow
+
+    %% Authentication
+    Client->>API: POST /scrape/twitter<br/>{ target: "@dankoe", limit: 50 }
+    API->>Auth: Validate API key
+    activate Auth
+    Auth->>Cache: Check key hash
+    Cache-->>Auth: Valid key, rate limit OK
+    Auth->>Cache: Increment usage counter
+    deactivate Auth
+    Auth-->>API: Authenticated
+
+    %% Health check
+    API->>Scraper: health_check()
+    Scraper->>Platform: Test connection
+    Platform-->>Scraper: 200 OK
+    Scraper-->>API: { status: "ok" }
+
+    %% Dispatch scraping job
+    API->>Queue: dispatch_scrape_job(twitter, @dankoe, 50)
+    activate Queue
+    API-->>Client: 202 Accepted<br/>{ job_id: "abc123" }
+
+    %% Scraping execution
+    Queue->>Scraper: extract("@dankoe", 50)
+    activate Scraper
+
+    %% Check cache
+    Scraper->>Cache: GET scraper:twitter:@dankoe
+    alt Cache hit
+        Cache-->>Scraper: Cached tweets (if < 1 hour old)
+    else Cache miss
+        Scraper->>Platform: Playwright OAuth login
+        Platform-->>Scraper: Session cookie
+        Scraper->>Platform: Fetch user timeline
+        Platform-->>Scraper: 50 tweets (JSON)
+        Scraper->>Cache: SET scraper:twitter:@dankoe<br/>TTL: 3600s
+    end
+
+    %% Normalize data
+    loop For each tweet
+        Scraper->>Scraper: normalize(tweet_data)
+        Note right of Scraper: Extract:<br/>- Author info<br/>- Content text<br/>- Metrics<br/>- Timestamp
+
+        %% Save to DB
+        Scraper->>DB: INSERT INTO contents
+        activate DB
+        DB->>DB: Check duplicate by source_url
+        alt New content
+            DB->>DB: INSERT content_id
+            DB->>DB: UPSERT author
+            DB-->>Scraper: Content { id: uuid }
+        else Duplicate
+            DB-->>Scraper: Skipped (duplicate)
+        end
+        deactivate DB
+    end
+
+    deactivate Scraper
+    Scraper-->>Queue: { scraped: 50, saved: 45 }
+
+    %% Analysis phase
+    Queue->>LLM: Analyze batch of tweets
+    activate LLM
+
+    loop For each content piece
+        LLM->>LLM: Generate embeddings
+        Note right of LLM: text-embedding-3-small<br/>1536 dimensions
+        LLM-->>Queue: embedding vector
+
+        Queue->>DB: UPDATE contents<br/>SET embedding = [...]
+        DB-->>Queue: Updated
+
+        Queue->>Vector: add_document(id, embedding, text)
+        Vector-->>Queue: Indexed
+
+        LLM->>LLM: Analyze content
+        Note right of LLM: Extract:<br/>- Frameworks (AIDA, PAS)<br/>- Hooks<br/>- Themes<br/>- Pain points
+        LLM-->>Queue: analysis JSON
+
+        Queue->>DB: UPDATE contents<br/>SET analysis = {...}, analyzed_at = NOW()
+        DB-->>Queue: Updated
+    end
+
+    deactivate LLM
+
+    %% Pattern detection
+    Queue->>DB: SELECT contents<br/>WHERE author_id = @dankoe
+    DB-->>Queue: All author's content
+
+    Queue->>Queue: Detect cross-platform patterns
+    Note right of Queue: Find:<br/>- Repeated themes<br/>- Tweet → Thread elaborations<br/>- Hook variations
+
+    Queue->>DB: INSERT INTO patterns
+    DB-->>Queue: Pattern { id: uuid }
+
+    deactivate Queue
+
+    %% Client polls for completion
+    Client->>API: GET /jobs/abc123
+    API-->>Client: 200 OK<br/>{ status: "completed", scraped: 45 }
+
+    Note over Client,Vector: Total time: ~2-5 min for 50 tweets<br/>Cost: ~$0.10 (embeddings + analysis)

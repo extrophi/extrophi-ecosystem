@@ -1,0 +1,80 @@
+sequenceDiagram
+    %% Voice Recording and Transcription Flow
+    participant User
+    participant UI as Svelte UI
+    participant Rust as Tauri Backend
+    participant Audio as Audio Thread
+    participant Plugin as Plugin Manager
+    participant Whisper as Whisper.cpp
+    participant DB as SQLite Repository
+    participant FS as File System
+
+    Note over User,FS: Voice Recording & Transcription Flow
+
+    %% Start recording
+    User->>UI: Click "Record"
+    UI->>Rust: invoke("start_recording")
+    Rust->>Audio: Send StartRecording command
+    Audio->>Audio: Initialize cpal stream
+    activate Audio
+    Audio-->>Rust: RecordingStarted
+    Rust-->>UI: { status: "recording" }
+    UI-->>User: Show recording indicator
+
+    %% Recording in progress
+    loop During recording
+        Audio->>Audio: Capture audio samples
+        Audio->>Audio: Calculate peak level
+        User->>UI: Request peak level
+        UI->>Rust: invoke("get_peak_level")
+        Rust->>Audio: Send GetPeakLevel command
+        Audio-->>Rust: PeakLevel(f32)
+        Rust-->>UI: { level: 0.75 }
+        UI-->>User: Update visual meter
+    end
+
+    %% Stop recording
+    User->>UI: Click "Stop"
+    UI->>Rust: invoke("stop_recording")
+    Rust->>Audio: Send StopRecording command
+    Audio->>Audio: Finalize WAV file
+    Audio->>FS: Write audio.wav
+    FS-->>Audio: File saved
+    deactivate Audio
+    Audio-->>Rust: RecordingStopped { samples, sample_rate }
+
+    %% Save recording metadata
+    Rust->>DB: Insert Recording
+    activate DB
+    DB->>DB: recording_id = 123
+    DB-->>Rust: Recording { id: 123 }
+    deactivate DB
+    Rust-->>UI: { recording_id: 123, filepath: "..." }
+    UI-->>User: Show "Transcribe" button
+
+    %% Transcribe
+    User->>UI: Click "Transcribe"
+    UI->>Rust: invoke("transcribe_audio", { recording_id: 123 })
+    Rust->>Plugin: Get active plugin
+    Plugin-->>Rust: WhisperPlugin
+
+    Rust->>Whisper: transcribe(filepath)
+    activate Whisper
+    Whisper->>Whisper: Load ggml-base model
+    Whisper->>Whisper: Process audio with Metal GPU
+    Note right of Whisper: ~30s for 5min audio<br/>Local, private processing
+    Whisper-->>Rust: Transcript { text, segments, confidence }
+    deactivate Whisper
+
+    %% Save transcript
+    Rust->>DB: Insert Transcript
+    activate DB
+    DB->>DB: Link to recording_id: 123
+    DB->>DB: Insert segments
+    DB-->>Rust: Transcript { id: 456 }
+    deactivate DB
+
+    Rust-->>UI: { transcript_id: 456, text: "..." }
+    UI-->>User: Display transcript text
+
+    Note over User,FS: Total time: ~30-60s for 5min audio<br/>All processing local, no API calls

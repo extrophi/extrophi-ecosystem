@@ -1,0 +1,104 @@
+sequenceDiagram
+    %% Card Publishing with $EXTROPY Attribution Flow
+    participant Writer as BrainDump Writer
+    participant Backend as Scraper Backend
+    participant DB as PostgreSQL
+    participant Ledger as $EXTROPY Ledger
+    participant User1 as Author (User 1)
+    participant User2 as Citer (User 2)
+
+    Note over Writer,User2: Card Publishing & Attribution Flow
+
+    %% Publishing a card from Writer
+    Writer->>Backend: POST /publish<br/>{ title, body, tags, privacy_level, category }
+    activate Backend
+
+    %% Create user if not exists
+    Backend->>DB: SELECT users WHERE email = ...
+    alt User exists
+        DB-->>Backend: User { id, extropy_balance }
+    else New user
+        Backend->>DB: INSERT INTO users
+        DB-->>Backend: User { id, extropy_balance: 0 }
+    end
+
+    %% Create card
+    Backend->>DB: INSERT INTO cards
+    activate DB
+    DB->>DB: Generate card_id
+    DB-->>Backend: Card { id: uuid, user_id }
+    deactivate DB
+
+    %% Initial publishing reward
+    Backend->>Ledger: Record publishing reward
+    activate Ledger
+    Ledger->>DB: BEGIN TRANSACTION
+    Ledger->>DB: INSERT INTO extropy_ledger<br/>{ type: "publish_reward", amount: 1.0, to_user_id }
+    Ledger->>DB: UPDATE users<br/>SET extropy_balance = extropy_balance + 1.0
+    Ledger->>DB: COMMIT TRANSACTION
+    deactivate Ledger
+    DB-->>Backend: Ledger entry created
+
+    Backend-->>Writer: 201 Created<br/>{ card_id, extropy_earned: 1.0 }
+    deactivate Backend
+    Writer-->>User1: "Card published! +1.0 $EXTROPY"
+
+    Note over Writer,User2: Time passes...<br/>User 2 discovers User 1's card
+
+    %% User 2 creates a card citing User 1's card
+    User2->>Backend: POST /publish<br/>{ body: "Building on @user1's idea..." }
+    activate Backend
+    Backend->>DB: INSERT INTO cards<br/>{ user_id: user2_id }
+    DB-->>Backend: Card { id: card2_id }
+
+    %% Create attribution
+    User2->>Backend: POST /attributions<br/>{ source_card_id: card2_id,<br/>target_card_id: card1_id,<br/>type: "citation" }
+
+    Backend->>DB: INSERT INTO attributions
+    activate DB
+    DB-->>Backend: Attribution { id: attr_id }
+    deactivate DB
+
+    %% Calculate and transfer $EXTROPY
+    Backend->>Ledger: Process attribution transfer
+    activate Ledger
+
+    %% Attribution reward: 10% of citer's balance to original author
+    Ledger->>DB: SELECT extropy_balance FROM users WHERE id = user2_id
+    DB-->>Ledger: { balance: 10.0 }
+
+    Ledger->>Ledger: Calculate transfer = balance * 0.10 = 1.0 $EXTROPY
+
+    Ledger->>DB: BEGIN TRANSACTION
+
+    %% Deduct from citer
+    Ledger->>DB: UPDATE users<br/>SET extropy_balance = extropy_balance - 1.0<br/>WHERE id = user2_id
+    DB->>DB: New balance: 9.0
+
+    %% Credit to author
+    Ledger->>DB: UPDATE users<br/>SET extropy_balance = extropy_balance + 1.0<br/>WHERE id = user1_id
+    DB->>DB: New balance: 2.0
+
+    %% Record in ledger
+    Ledger->>DB: INSERT INTO extropy_ledger<br/>{ from_user_id: user2_id,<br/>to_user_id: user1_id,<br/>amount: 1.0,<br/>type: "attribution_transfer",<br/>attribution_id: attr_id,<br/>from_balance_after: 9.0,<br/>to_balance_after: 2.0 }
+
+    %% Update attribution record
+    Ledger->>DB: UPDATE attributions<br/>SET extropy_transferred = 1.0<br/>WHERE id = attr_id
+
+    Ledger->>DB: COMMIT TRANSACTION
+    deactivate Ledger
+
+    Backend-->>User2: 201 Created<br/>{ attribution_id, extropy_transferred: 1.0 }
+    deactivate Backend
+
+    Note over User1,User2: User 1 earned +1.0 $EXTROPY<br/>User 2 balance: 10.0 → 9.0
+
+    %% View ledger history
+    User1->>Backend: GET /tokens/ledger
+    Backend->>DB: SELECT * FROM extropy_ledger<br/>WHERE to_user_id = user1_id<br/>ORDER BY created_at DESC
+    activate DB
+    DB-->>Backend: [<br/>  { type: "attribution_transfer", amount: 1.0, from: "user2" },<br/>  { type: "publish_reward", amount: 1.0 }<br/>]
+    deactivate DB
+    Backend-->>User1: Transaction history
+
+    Note over Writer,User2: Immutable ledger ensures:<br/>- Transparent attribution<br/>- Traceable rewards<br/>- Incentivized knowledge sharing

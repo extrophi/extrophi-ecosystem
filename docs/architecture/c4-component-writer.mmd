@@ -1,0 +1,198 @@
+graph TB
+    %% C4 Component Diagram - BrainDump Writer (Rust Backend)
+    %% Shows internal components of the Tauri Rust application
+
+    UI[Svelte 5 Frontend]
+
+    subgraph tauri["Tauri Rust Backend"]
+        direction TB
+
+        subgraph commands["Tauri Commands"]
+            REC_CMD[Recording Commands<br/>start/stop/peak]
+            TRANS_CMD[Transcription Commands<br/>transcribe_audio]
+            CHAT_CMD[Chat Commands<br/>send_message]
+            SESS_CMD[Session Commands<br/>CRUD operations]
+            PROMPT_CMD[Prompt Commands<br/>CRUD templates]
+            EXPORT_CMD[Export Commands<br/>to_markdown]
+            BACKUP_CMD[Backup Commands<br/>create/restore]
+            GIT_CMD[Git Commands<br/>publish_card]
+            STATS_CMD[Stats Commands<br/>usage_metrics]
+        end
+
+        subgraph audio["Audio Module"]
+            RECORDER[Recorder<br/>cpal + hound]
+            WAV[WAV Writer<br/>File I/O]
+            THREAD[Audio Thread<br/>mpsc channels]
+            PEAK[Peak Detector<br/>RMS calculation]
+        end
+
+        subgraph plugin["Plugin System"]
+            MGR[Plugin Manager<br/>Strategy Pattern]
+            WHISPER[Whisper.cpp Plugin<br/>FFI Bindings]
+            CANDLE[Candle Plugin<br/>Pure Rust ML]
+            TYPES[Plugin Types<br/>Shared Interfaces]
+        end
+
+        subgraph services["External Services"]
+            OPENAI[OpenAI Client<br/>HTTP + Streaming]
+            CLAUDE[Claude Client<br/>Messages API]
+            KEYCHAIN[Keychain Service<br/>macOS Security]
+        end
+
+        subgraph db["Database Layer"]
+            REPO[Repository<br/>CRUD Abstraction]
+            MIG[Migration System<br/>Schema Versioning]
+
+            subgraph models["Data Models"]
+                REC_MODEL[Recording]
+                TRANS_MODEL[Transcript]
+                SEG_MODEL[Segment]
+                SESS_MODEL[ChatSession]
+                MSG_MODEL[Message]
+                PROMPT_MODEL[PromptTemplate]
+                CARD_MODEL[Card]
+                TAG_MODEL[Tag]
+                USAGE_MODEL[UsageEvent]
+            end
+        end
+
+        subgraph export["Export Module"]
+            MD[Markdown Generator<br/>Template Engine]
+            FILTER[Privacy Filter<br/>PII Detection]
+            FORMAT[Formatter<br/>YAML Frontmatter]
+        end
+
+        subgraph backup["Backup System"]
+            CREATOR[Backup Creator<br/>SQLite Copy]
+            RESTORE[Backup Restorer<br/>Replace DB]
+            SCHED[Scheduler<br/>Cron-like]
+            CLEANUP[Cleanup Service<br/>Retention Policy]
+        end
+
+        subgraph git["Git Publisher"]
+            PUBLISH[Publisher<br/>Git Commands]
+            COMMIT[Commit Builder<br/>Message Template]
+            PUSH[Push Handler<br/>SSH/HTTPS]
+        end
+
+        subgraph error["Error Handling"]
+            ERR_TYPES[Error Types<br/>Custom Enums]
+            LOGGER[Logger<br/>tracing/log]
+        end
+    end
+
+    SQLITE[(SQLite<br/>braindump.db)]
+    FS[File System<br/>Audio Files]
+    WHISPER_LIB[whisper.cpp<br/>System Library]
+    API_EXT[External APIs<br/>OpenAI, Claude]
+    GITHUB[GitHub<br/>Remote Repo]
+
+    %% Frontend to commands
+    UI -->|"invoke()"| REC_CMD
+    UI -->|"invoke()"| TRANS_CMD
+    UI -->|"invoke()"| CHAT_CMD
+    UI -->|"invoke()"| SESS_CMD
+    UI -->|"invoke()"| PROMPT_CMD
+    UI -->|"invoke()"| EXPORT_CMD
+    UI -->|"invoke()"| BACKUP_CMD
+    UI -->|"invoke()"| GIT_CMD
+    UI -->|"invoke()"| STATS_CMD
+
+    %% Recording flow
+    REC_CMD --> THREAD
+    THREAD --> RECORDER
+    RECORDER --> PEAK
+    RECORDER --> WAV
+    WAV --> FS
+    REC_CMD --> REPO
+    REPO --> REC_MODEL
+
+    %% Transcription flow
+    TRANS_CMD --> MGR
+    MGR --> WHISPER
+    MGR --> CANDLE
+    WHISPER --> WHISPER_LIB
+    TRANS_CMD --> REPO
+    REPO --> TRANS_MODEL
+    REPO --> SEG_MODEL
+
+    %% Chat flow
+    CHAT_CMD --> OPENAI
+    CHAT_CMD --> CLAUDE
+    CHAT_CMD --> KEYCHAIN
+    OPENAI --> API_EXT
+    CLAUDE --> API_EXT
+    CHAT_CMD --> REPO
+    REPO --> MSG_MODEL
+    REPO --> SESS_MODEL
+
+    %% Prompt management
+    PROMPT_CMD --> REPO
+    REPO --> PROMPT_MODEL
+
+    %% Export flow
+    EXPORT_CMD --> MD
+    MD --> FILTER
+    FILTER --> FORMAT
+    FORMAT --> FS
+    EXPORT_CMD --> REPO
+
+    %% Backup flow
+    BACKUP_CMD --> CREATOR
+    BACKUP_CMD --> RESTORE
+    CREATOR --> SCHED
+    SCHED --> CLEANUP
+    CREATOR --> FS
+    RESTORE --> FS
+
+    %% Git publishing
+    GIT_CMD --> PUBLISH
+    PUBLISH --> COMMIT
+    COMMIT --> PUSH
+    PUSH --> GITHUB
+    GIT_CMD --> REPO
+    REPO --> CARD_MODEL
+
+    %% Stats flow
+    STATS_CMD --> REPO
+    REPO --> USAGE_MODEL
+    REPO --> TAG_MODEL
+
+    %% Database connections
+    REPO --> MIG
+    MIG --> SQLITE
+    REC_MODEL --> SQLITE
+    TRANS_MODEL --> SQLITE
+    SEG_MODEL --> SQLITE
+    SESS_MODEL --> SQLITE
+    MSG_MODEL --> SQLITE
+    PROMPT_MODEL --> SQLITE
+    CARD_MODEL --> SQLITE
+    TAG_MODEL --> SQLITE
+    USAGE_MODEL --> SQLITE
+
+    %% Error handling
+    REC_CMD --> ERR_TYPES
+    TRANS_CMD --> ERR_TYPES
+    CHAT_CMD --> ERR_TYPES
+    ERR_TYPES --> LOGGER
+
+    %% Styling
+    classDef command fill:#61DAFB,stroke:#21A1C4,color:#000
+    classDef audio fill:#E67E22,stroke:#CA6F1E,color:#fff
+    classDef plugin fill:#9B59B6,stroke:#6C3483,color:#fff
+    classDef service fill:#3498DB,stroke:#2471A3,color:#fff
+    classDef database fill:#27AE60,stroke:#1E8449,color:#fff
+    classDef export fill:#F39C12,stroke:#D68910,color:#000
+    classDef backup fill:#E74C3C,stroke:#922B21,color:#fff
+    classDef git fill:#95A5A6,stroke:#7F8C8D,color:#000
+
+    class REC_CMD,TRANS_CMD,CHAT_CMD,SESS_CMD,PROMPT_CMD,EXPORT_CMD,BACKUP_CMD,GIT_CMD,STATS_CMD command
+    class RECORDER,WAV,THREAD,PEAK audio
+    class MGR,WHISPER,CANDLE,TYPES plugin
+    class OPENAI,CLAUDE,KEYCHAIN service
+    class REPO,MIG,REC_MODEL,TRANS_MODEL,SEG_MODEL,SESS_MODEL,MSG_MODEL,PROMPT_MODEL,CARD_MODEL,TAG_MODEL,USAGE_MODEL database
+    class MD,FILTER,FORMAT export
+    class CREATOR,RESTORE,SCHED,CLEANUP backup
+    class PUBLISH,COMMIT,PUSH git
+    class ERR_TYPES,LOGGER error

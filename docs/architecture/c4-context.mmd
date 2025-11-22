@@ -1,0 +1,66 @@
+graph TB
+    %% C4 Context Diagram - Extrophi Ecosystem
+    %% System-level view showing external dependencies
+
+    subgraph users["👥 Users & Actors"]
+        U1[Knowledge Worker]
+        U2[Content Researcher]
+        U3[System Administrator]
+    end
+
+    subgraph ecosystem["🌐 Extrophi Ecosystem"]
+        BD[BrainDump Writer<br/>Desktop App]
+        SCR[IAC-032 Scraper<br/>Backend API]
+        ADM[Admin Dashboard<br/>Web UI]
+    end
+
+    subgraph external["🔌 External Systems"]
+        TWITTER[Twitter/X API]
+        YOUTUBE[YouTube API]
+        REDDIT[Reddit API]
+        WEB[Web Content<br/>Jina.ai Reader]
+        OPENAI[OpenAI API<br/>GPT-4 + Embeddings]
+        CLAUDE[Claude API<br/>Sonnet 4.5]
+        GH[GitHub<br/>Publishing]
+        PG[(PostgreSQL<br/>+ pgvector)]
+        SQLITE[(SQLite)]
+        REDIS[(Redis)]
+    end
+
+    %% User interactions
+    U1 -->|"Records voice,<br/>chats with AI"| BD
+    U2 -->|"Scrapes content,<br/>analyzes patterns"| SCR
+    U3 -->|"Manages projects"| ADM
+
+    %% BrainDump connections
+    BD -->|"Transcribe audio"| BD
+    BD -->|"Chat requests"| OPENAI
+    BD -->|"Chat requests"| CLAUDE
+    BD -->|"Store sessions"| SQLITE
+    BD -->|"Publish cards"| GH
+    BD -->|"Publish cards"| SCR
+
+    %% Scraper connections
+    SCR -->|"Scrape tweets"| TWITTER
+    SCR -->|"Scrape videos"| YOUTUBE
+    SCR -->|"Scrape posts"| REDDIT
+    SCR -->|"Scrape articles"| WEB
+    SCR -->|"Generate embeddings,<br/>analyze content"| OPENAI
+    SCR -->|"Polish copy"| CLAUDE
+    SCR -->|"Store content,<br/>vectors"| PG
+    SCR -->|"Cache, queues"| REDIS
+
+    %% Admin dashboard
+    ADM -->|"Monitor status"| SCR
+    ADM -->|"View metrics"| PG
+
+    %% Styling
+    classDef userStyle fill:#4A90E2,stroke:#2E5C8A,color:#fff
+    classDef systemStyle fill:#50C878,stroke:#2E7D4E,color:#fff
+    classDef externalStyle fill:#F5A623,stroke:#C17D11,color:#fff
+    classDef dbStyle fill:#9B59B6,stroke:#6C3483,color:#fff
+
+    class U1,U2,U3 userStyle
+    class BD,SCR,ADM systemStyle
+    class TWITTER,YOUTUBE,REDDIT,WEB,OPENAI,CLAUDE,GH externalStyle
+    class PG,SQLITE,REDIS dbStyle
