@@ -21,6 +21,9 @@ from db import get_db_manager, ContentCRUD, SourceCRUD, ScrapeJobCRUD, VectorSea
 # Import enrichment engine
 from enrichment import EnrichmentEngine
 
+# Import monitoring routes
+from api.routes import monitoring
+
 # Load environment variables
 load_dotenv()
 
@@ -54,6 +57,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include monitoring routes
+app.include_router(monitoring.router)
 
 
 # ============================================================================
