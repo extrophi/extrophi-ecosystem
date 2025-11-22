@@ -1,0 +1,107 @@
+# Multi-stage Containerfile for BrainDump Writer (Tauri Builder)
+# Target: <500MB final image for building Tauri apps in CI/CD
+
+# ============================================================================
+# Stage 1: Node.js Dependencies Builder
+# ============================================================================
+FROM node:18-alpine AS node-builder
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install Node dependencies (production only)
+RUN npm ci --only=production && \
+    npm cache clean --force
+
+# ============================================================================
+# Stage 2: Rust Dependencies Builder
+# ============================================================================
+FROM rust:1.75-slim AS rust-builder
+
+# Install system dependencies for Tauri
+RUN apt-get update && apt-get install -y \
+    libwebkit2gtk-4.1-dev \
+    build-essential \
+    curl \
+    wget \
+    file \
+    libssl-dev \
+    libayatana-appindicator3-dev \
+    librsvg2-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy Tauri source
+COPY src-tauri ./src-tauri
+
+# Pre-download Rust dependencies (cache layer)
+WORKDIR /app/src-tauri
+RUN cargo fetch
+
+# ============================================================================
+# Stage 3: Application Builder
+# ============================================================================
+FROM node:18-slim AS app-builder
+
+# Install minimal system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    file \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+WORKDIR /app
+
+# Copy dependencies from builders
+COPY --from=node-builder /app/node_modules ./node_modules
+COPY package*.json ./
+
+# Copy application source
+COPY . .
+
+# Build Vite frontend
+RUN npm run build
+
+# Install Tauri CLI
+RUN npm install -g @tauri-apps/cli@2.9.0
+
+# ============================================================================
+# Stage 4: Final Runtime (Build Environment)
+# ============================================================================
+FROM node:18-alpine AS runtime
+
+# Install minimal runtime dependencies
+RUN apk add --no-cache \
+    curl
+
+WORKDIR /app
+
+# Copy built application
+COPY --from=app-builder /app/dist ./dist
+COPY --from=app-builder /app/package*.json ./
+COPY --from=app-builder /app/node_modules ./node_modules
+
+# Copy Tauri config (for reference)
+COPY --from=app-builder /app/src-tauri/tauri.conf.json ./tauri.conf.json
+
+# Environment variables
+ENV NODE_ENV=production
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD node --version || exit 1
+
+# Default command (informational - Tauri apps are desktop applications)
+CMD ["echo", "BrainDump Writer build artifacts are in /app/dist"]
+
+# Note: This container is designed for CI/CD build processes.
+# To run the actual Tauri app, use: npm run tauri:build
+# The built desktop application will be in src-tauri/target/release/bundle/
