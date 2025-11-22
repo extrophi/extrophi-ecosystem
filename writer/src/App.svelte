@@ -10,11 +10,6 @@
   import WaveformVisualizer from './components/WaveformVisualizer.svelte';
   import RecordingControls from './components/RecordingControls.svelte';
   import AudioLevelMeter from './components/AudioLevelMeter.svelte';
-  import ChatView from './lib/components/ChatView.svelte';
-  import PromptManager from './lib/components/PromptManager.svelte';
-  import StatsDashboard from './lib/components/StatsDashboard.svelte';
-  import ToastContainer from './lib/components/ToastContainer.svelte';
-  import ShortcutsHelp from './lib/components/ShortcutsHelp.svelte';
   import TerminalIsland from './islands/TerminalIsland.svelte';
   import { scanText, highlightMatches } from './lib/privacy_scanner';
   import { shortcuts, matchesShortcut } from './lib/utils/shortcuts.js';
@@ -837,9 +832,13 @@
           currentTranscript = currentTranscript ? `${currentTranscript}\n\n${content}` : content;
         }} />
       {:else if currentView === 'prompts'}
-        <PromptManager />
+        <div class="placeholder-view">
+          <p>Prompt Manager - Coming Soon</p>
+        </div>
       {:else if currentView === 'stats'}
-        <StatsDashboard />
+        <div class="placeholder-view">
+          <p>Statistics Dashboard - Coming Soon</p>
+        </div>
       {:else}
         <!-- Current Transcript Display -->
         <div class="transcript-display">
@@ -913,11 +912,8 @@
     </div>
   {/if}
 
-  <!-- Toast Notifications -->
-  <ToastContainer />
-
-  <!-- Keyboard Shortcuts Help Modal -->
-  <ShortcutsHelp bind:visible={showShortcutsHelp} />
+  <!-- TODO: Add Toast Notifications component -->
+  <!-- TODO: Add Keyboard Shortcuts Help Modal component -->
 </div>
 
 <!--
@@ -1304,6 +1300,15 @@
     color: #bbbbbb;
   }
 
+  .placeholder-view {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: #999999;
+    font-size: 1.1rem;
+    padding: 3rem;
+  }
 
   .transcript-header {
     display: flex;
